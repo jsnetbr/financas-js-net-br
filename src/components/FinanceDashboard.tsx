@@ -1,5 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
+  ChevronLeft,
+  ChevronRight,
   FolderOpen,
   Home,
   LogOut,
@@ -75,6 +77,18 @@ function centsToInput(cents: number) {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
+function shiftMonthKey(value: string, delta: number) {
+  const [yearText, monthText] = value.split("-");
+  const year = Number(yearText);
+  const month = Number(monthText);
+  if (!year || !month) return monthKey();
+
+  const normalized = new Date(Date.UTC(year, month - 1 + delta, 1));
+  const nextYear = normalized.getUTCFullYear();
+  const nextMonth = String(normalized.getUTCMonth() + 1).padStart(2, "0");
+  return `${nextYear}-${nextMonth}`;
+}
+
 function isMissingDisplayNameColumn(error: MaybeDisplayNameError | null) {
   if (!error) return false;
   const details = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
@@ -125,7 +139,7 @@ export function FinanceDashboard() {
   const categoriesByType = categories.filter((item) => item.type === transactionForm.type);
   const recurringCategoriesByType = categories.filter((item) => item.type === recurringForm.type);
   const visibleCategories = categories.filter((item) => item.type === activeCategoryType);
-  const latestTransactions = transactions.slice(0, 4);
+  const monthExpenses = transactions.filter((item) => item.type === "saida");
 
   useEffect(() => {
     if (!user) return;
@@ -595,6 +609,14 @@ export function FinanceDashboard() {
     });
   }
 
+  function goToPreviousMonth() {
+    setSelectedMonth((current) => shiftMonthKey(current, -1));
+  }
+
+  function goToNextMonth() {
+    setSelectedMonth((current) => shiftMonthKey(current, 1));
+  }
+
   const tabs: Array<{ id: DashboardTab; label: string; icon: typeof Home }> = [
     { id: "resumo", label: "Resumo", icon: Home },
     { id: "lancamentos", label: "Lancamentos", icon: ReceiptText },
@@ -649,17 +671,25 @@ export function FinanceDashboard() {
       <section className="app-shell">
       <header className="topbar">
         <div>
-          <p>{profileLabel}</p>
           <h1>Financas</h1>
+          <p>{profileLabel}</p>
         </div>
         <div className="topbar-actions">
-          <input
-            aria-label="Mes"
-            className="month-picker"
-            type="month"
-            value={selectedMonth}
-            onChange={(event) => setSelectedMonth(event.target.value)}
-          />
+          <div className="month-nav" role="group" aria-label="Navegacao de mes">
+            <button className="icon-button" onClick={goToPreviousMonth} title="Mes anterior" aria-label="Mes anterior">
+              <ChevronLeft size={18} />
+            </button>
+            <input
+              aria-label="Mes"
+              className="month-picker"
+              type="month"
+              value={selectedMonth}
+              onChange={(event) => setSelectedMonth(event.target.value)}
+            />
+            <button className="icon-button" onClick={goToNextMonth} title="Mes seguinte" aria-label="Mes seguinte">
+              <ChevronRight size={18} />
+            </button>
+          </div>
           <button className="icon-button" onClick={signOut} title="Sair">
             <LogOut size={18} />
           </button>
@@ -683,8 +713,8 @@ export function FinanceDashboard() {
           <section className="panel">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Mes selecionado</p>
-                <h2>Ultimos lancamentos</h2>
+                <p className="eyebrow">Mes filtrado</p>
+                <h2>Saidas do mes</h2>
               </div>
               <button className="ghost-button" onClick={loadData}>
                 <RefreshCw size={16} />
@@ -692,12 +722,13 @@ export function FinanceDashboard() {
               </button>
             </div>
             <TransactionCards
-              transactions={latestTransactions}
+              transactions={monthExpenses}
               loading={loading}
               categoryNameFor={categoryNameFor}
               deleteTransaction={deleteTransaction}
               editTransaction={beginEditTransaction}
               togglePaid={toggleTransactionPaid}
+              emptyMessage="Nenhuma saida neste mes."
             />
           </section>
         </section>
@@ -1227,6 +1258,7 @@ function TransactionCards({
   deleteTransaction,
   editTransaction,
   togglePaid,
+  emptyMessage = "Nenhum lancamento neste mes.",
 }: {
   transactions: Transaction[];
   loading: boolean;
@@ -1234,13 +1266,14 @@ function TransactionCards({
   deleteTransaction: (id: string) => Promise<void>;
   editTransaction: (item: Transaction) => void;
   togglePaid: (item: Transaction) => Promise<void>;
+  emptyMessage?: string;
 }) {
   if (loading) {
     return <p className="empty-state">Carregando...</p>;
   }
 
   if (transactions.length === 0) {
-    return <p className="empty-state">Nenhum lancamento neste mes.</p>;
+    return <p className="empty-state">{emptyMessage}</p>;
   }
 
   return (

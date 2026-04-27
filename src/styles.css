@@ -431,6 +431,16 @@ input[type="color"] {
   gap: 10px;
 }
 
+.month-nav {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.month-nav .icon-button {
+  min-width: 42px;
+}
+
 .month-picker {
   background:
     linear-gradient(180deg, rgba(26, 38, 54, 0.98), rgba(13, 21, 32, 0.98));
@@ -1001,6 +1011,21 @@ input[type="color"] {
   .panel-header {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .month-nav {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .month-nav .month-picker {
+    flex: 1;
+    min-width: 0;
   }
 
   .topbar-actions,
