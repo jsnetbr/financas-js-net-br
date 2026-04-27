@@ -15,6 +15,7 @@ export type Transaction = {
   entry_date: string;
   category_id: string | null;
   notes: string | null;
+  is_paid: boolean;
   source_recurring_id?: string | null;
   source_month?: string | null;
 };

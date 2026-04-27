@@ -3,6 +3,8 @@ import {
   FolderOpen,
   Home,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   PauseCircle,
   Pencil,
   PlayCircle,
@@ -10,6 +12,8 @@ import {
   ReceiptText,
   RefreshCw,
   Repeat2,
+  CheckCircle2,
+  Settings,
   Trash2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
@@ -49,7 +53,20 @@ type CategoryForm = {
   color: string;
 };
 
-type DashboardTab = "resumo" | "lancamentos" | "recorrencias" | "categorias";
+type DashboardTab = "resumo" | "lancamentos" | "recorrencias" | "categorias" | "configuracoes";
+
+type Profile = {
+  id: string;
+  email: string;
+  display_name: string | null;
+};
+
+type MaybeDisplayNameError = {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+};
 
 const today = new Date().toISOString().slice(0, 10);
 const palette = ["#2f9e44", "#1971c2", "#f08c00", "#7048e8", "#d6336c", "#0ca678"];
@@ -58,16 +75,25 @@ function centsToInput(cents: number) {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
+function isMissingDisplayNameColumn(error: MaybeDisplayNameError | null) {
+  if (!error) return false;
+  const details = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
+  return details.includes("display_name") || error.code === "PGRST204" || error.code === "42703";
+}
+
 export function FinanceDashboard() {
   const { user, signOut } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(monthKey());
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("resumo");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCategoryType, setActiveCategoryType] = useState<EntryType>("saida");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [supportsDisplayName, setSupportsDisplayName] = useState(true);
   const [transactionForm, setTransactionForm] = useState<TransactionForm>({
     type: "saida",
     description: "",
@@ -77,6 +103,10 @@ export function FinanceDashboard() {
     notes: "",
   });
   const [categoryName, setCategoryName] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [recurringForm, setRecurringForm] = useState<RecurringForm>({
     type: "saida",
     description: "",
@@ -120,9 +150,28 @@ export function FinanceDashboard() {
       supabase.from("recurring_transactions").select("*").order("day_of_month"),
     ]);
 
-    if (categoryResult.error || transactionResult.error || recurringResult.error) {
+    let profileResult;
+    if (supportsDisplayName) {
+      profileResult = await supabase.from("profiles").select("id,email,display_name").eq("id", user.id).maybeSingle();
+
+      if (isMissingDisplayNameColumn(profileResult.error as MaybeDisplayNameError | null)) {
+        setSupportsDisplayName(false);
+        profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
+      }
+    } else {
+      profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
+    }
+
+    if (profileResult.error || categoryResult.error || transactionResult.error || recurringResult.error) {
       setMessage("Nao foi possivel carregar os dados. Confira se o SQL do Supabase foi aplicado.");
     } else {
+      const profileRow = profileResult.data as { id: string; email: string; display_name?: string | null } | null;
+      const nextProfile = profileRow
+        ? { id: profileRow.id, email: profileRow.email, display_name: profileRow.display_name ?? null }
+        : null;
+      setProfile(nextProfile);
+      setDisplayName(nextProfile?.display_name ?? "");
+      setNewEmail(user.email ?? "");
       setCategories(categoryResult.data ?? []);
       setTransactions(transactionResult.data ?? []);
       setRecurring(recurringResult.data ?? []);
@@ -166,6 +215,7 @@ export function FinanceDashboard() {
       entry_date: transactionForm.entry_date,
       category_id: transactionForm.category_id || null,
       notes: transactionForm.notes.trim() || null,
+      is_paid: false,
     });
 
     if (error) {
@@ -396,6 +446,7 @@ export function FinanceDashboard() {
       notes: `Gerado de recorrencia:${item.id}:${selectedMonth}`,
       source_recurring_id: item.id,
       source_month: selectedMonth,
+      is_paid: false,
     };
 
     const { error } = await supabase.from("transactions").insert(payload);
@@ -417,6 +468,7 @@ export function FinanceDashboard() {
         entry_date: payload.entry_date,
         category_id: payload.category_id,
         notes: payload.notes,
+        is_paid: false,
       });
 
       if (fallbackError) {
@@ -431,6 +483,88 @@ export function FinanceDashboard() {
 
     setMessage("Lancamento gerado.");
     await loadData();
+  }
+
+  async function toggleTransactionPaid(item: Transaction) {
+    if (!supabase || item.type !== "saida") return;
+    const { error } = await supabase
+      .from("transactions")
+      .update({ is_paid: !item.is_paid })
+      .eq("id", item.id);
+
+    setMessage(error ? "Nao foi possivel alterar o status de pagamento." : "Status atualizado.");
+    await loadData();
+  }
+
+  async function updateDisplayName(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !user) return;
+    if (!supportsDisplayName) {
+      setMessage("Nome exibido ainda nao esta ativo. Rode o SQL no Supabase e atualize a pagina.");
+      return;
+    }
+
+    const nextName = displayName.trim();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ display_name: nextName || null, email: user.email ?? "" })
+      .eq("id", user.id);
+
+    if (error) {
+      setMessage("Nao foi possivel salvar o nome exibido.");
+      return;
+    }
+
+    setProfile((current) =>
+      current
+        ? { ...current, display_name: nextName || null, email: user.email ?? current.email }
+        : { id: user.id, email: user.email ?? "", display_name: nextName || null },
+    );
+    setDisplayName(nextName);
+    setMessage("Nome exibido salvo.");
+  }
+
+  async function updateEmail(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+
+    const email = newEmail.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setMessage("Informe um email valido.");
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ email });
+    setMessage(
+      error
+        ? "Nao foi possivel atualizar o email."
+        : "Pedido de troca enviado. Confira o email para confirmar, se o Supabase pedir.",
+    );
+  }
+
+  async function updatePassword(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase) return;
+
+    if (newPassword.length < 6) {
+      setMessage("A nova senha precisa ter pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setMessage("A confirmacao da senha nao confere.");
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setMessage("Nao foi possivel atualizar a senha.");
+      return;
+    }
+
+    setNewPassword("");
+    setConfirmPassword("");
+    setMessage("Senha atualizada.");
   }
 
   function categoryNameFor(id: string | null) {
@@ -466,18 +600,62 @@ export function FinanceDashboard() {
     { id: "lancamentos", label: "Lancamentos", icon: ReceiptText },
     { id: "recorrencias", label: "Recorrencias", icon: Repeat2 },
     { id: "categorias", label: "Categorias", icon: FolderOpen },
+    { id: "configuracoes", label: "Configuracoes", icon: Settings },
   ];
 
+  const profileLabel = profile?.display_name?.trim() || user?.email || "Controle pessoal";
+
+  const navigation = tabs.map((tab) => {
+    const Icon = tab.icon;
+    return (
+      <button
+        key={tab.id}
+        className={activeTab === tab.id ? "active" : ""}
+        onClick={() => setActiveTab(tab.id)}
+        title={tab.label}
+        aria-label={tab.label}
+      >
+        <Icon size={18} />
+        <span>{tab.label}</span>
+      </button>
+    );
+  });
+
   return (
-    <main className="app-shell">
+    <main className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
+      <aside className="sidebar" aria-label="Navegacao principal">
+        <div className="sidebar-brand">
+          <div className="sidebar-mark">F</div>
+          <div className="sidebar-copy">
+            <strong>Financas</strong>
+            <span>{profileLabel}</span>
+          </div>
+        </div>
+
+        <nav className="sidebar-nav">{navigation}</nav>
+
+        <button
+          className="sidebar-toggle"
+          onClick={() => setSidebarCollapsed((current) => !current)}
+          title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+          aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+          aria-pressed={sidebarCollapsed}
+        >
+          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+          <span>{sidebarCollapsed ? "Expandir" : "Recolher"}</span>
+        </button>
+      </aside>
+
+      <section className="app-shell">
       <header className="topbar">
         <div>
-          <p>Controle pessoal</p>
+          <p>{profileLabel}</p>
           <h1>Financas</h1>
         </div>
         <div className="topbar-actions">
           <input
             aria-label="Mes"
+            className="month-picker"
             type="month"
             value={selectedMonth}
             onChange={(event) => setSelectedMonth(event.target.value)}
@@ -490,20 +668,8 @@ export function FinanceDashboard() {
 
       {message && <div className="notice">{message}</div>}
 
-      <nav className="tabbar" aria-label="Areas do app">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              className={activeTab === tab.id ? "active" : ""}
-              onClick={() => setActiveTab(tab.id)}
-            >
-              <Icon size={18} />
-              {tab.label}
-            </button>
-          );
-        })}
+      <nav className="mobile-tabbar" aria-label="Areas do app">
+        {navigation}
       </nav>
 
       {activeTab === "resumo" && (
@@ -512,7 +678,6 @@ export function FinanceDashboard() {
             <SummaryCard title="Entradas" value={formatMoney(summary.income)} tone="income" />
             <SummaryCard title="Saidas" value={formatMoney(summary.expense)} tone="expense" />
             <SummaryCard title="Saldo" value={formatMoney(summary.balance)} tone="balance" />
-            <SummaryCard title="Previsto" value={formatMoney(summary.expectedBalance)} tone="expected" />
           </section>
 
           <section className="panel">
@@ -532,6 +697,7 @@ export function FinanceDashboard() {
               categoryNameFor={categoryNameFor}
               deleteTransaction={deleteTransaction}
               editTransaction={beginEditTransaction}
+              togglePaid={toggleTransactionPaid}
             />
           </section>
         </section>
@@ -611,6 +777,7 @@ export function FinanceDashboard() {
             categoryNameFor={categoryNameFor}
             deleteTransaction={deleteTransaction}
             editTransaction={beginEditTransaction}
+            togglePaid={toggleTransactionPaid}
           />
         </section>
       )}
@@ -796,6 +963,79 @@ export function FinanceDashboard() {
         </section>
       )}
 
+      {activeTab === "configuracoes" && (
+        <section className="tab-panel panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Conta</p>
+              <h2>Configuracoes</h2>
+            </div>
+          </div>
+
+          <div className="settings-grid">
+            <form className="settings-card" onSubmit={updateDisplayName}>
+              <div>
+                <p className="eyebrow">Perfil</p>
+                <h3>Nome exibido</h3>
+                <p>Esse nome aparece no topo do app e no menu lateral.</p>
+              </div>
+              <label>
+                Nome
+                <input
+                  value={displayName}
+                  placeholder="Seu nome"
+                  onChange={(event) => setDisplayName(event.target.value)}
+                />
+              </label>
+              <button className="primary-button">Salvar nome</button>
+            </form>
+
+            <form className="settings-card" onSubmit={updateEmail}>
+              <div>
+                <p className="eyebrow">Acesso</p>
+                <h3>Email</h3>
+                <p>O Supabase pode pedir confirmacao no email atual e no novo email.</p>
+              </div>
+              <label>
+                Novo email
+                <input
+                  type="email"
+                  value={newEmail}
+                  placeholder="email@exemplo.com"
+                  onChange={(event) => setNewEmail(event.target.value)}
+                />
+              </label>
+              <button className="primary-button">Atualizar email</button>
+            </form>
+
+            <form className="settings-card" onSubmit={updatePassword}>
+              <div>
+                <p className="eyebrow">Seguranca</p>
+                <h3>Senha</h3>
+                <p>Use pelo menos 6 caracteres e confirme a nova senha.</p>
+              </div>
+              <label>
+                Nova senha
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                />
+              </label>
+              <label>
+                Confirmar senha
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                />
+              </label>
+              <button className="primary-button">Atualizar senha</button>
+            </form>
+          </div>
+        </section>
+      )}
+
       {editingTransaction && (
         <Modal title="Editar lancamento" onClose={() => setEditingTransaction(null)}>
           <form className="modal-form" onSubmit={updateTransaction}>
@@ -966,6 +1206,7 @@ export function FinanceDashboard() {
           </form>
         </Modal>
       )}
+      </section>
     </main>
   );
 }
@@ -985,12 +1226,14 @@ function TransactionCards({
   categoryNameFor,
   deleteTransaction,
   editTransaction,
+  togglePaid,
 }: {
   transactions: Transaction[];
   loading: boolean;
   categoryNameFor: (id: string | null) => string;
   deleteTransaction: (id: string) => Promise<void>;
   editTransaction: (item: Transaction) => void;
+  togglePaid: (item: Transaction) => Promise<void>;
 }) {
   if (loading) {
     return <p className="empty-state">Carregando...</p>;
@@ -1012,9 +1255,24 @@ function TransactionCards({
           </div>
           <h3>{item.description}</h3>
           <p>{categoryNameFor(item.category_id)}</p>
+          {item.type === "saida" && (
+            <span className={item.is_paid ? "status-pill success" : "status-pill pending"}>
+              {item.is_paid ? "Pago" : "Pendente"}
+            </span>
+          )}
           <div className="card-row footer">
             <span>{new Date(`${item.entry_date}T00:00:00`).toLocaleDateString("pt-BR")}</span>
             <div className="card-actions compact">
+              {item.type === "saida" && (
+                <button
+                  className={item.is_paid ? "ghost-button paid-action" : "ghost-button"}
+                  onClick={() => togglePaid(item)}
+                  title={item.is_paid ? "Desmarcar pagamento" : "Marcar como pago"}
+                >
+                  <CheckCircle2 size={16} />
+                  {item.is_paid ? "Desmarcar" : "Marcar pago"}
+                </button>
+              )}
               <button className="icon-button" onClick={() => editTransaction(item)} title="Editar">
                 <Pencil size={16} />
               </button>

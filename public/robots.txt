@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://financas.js.net.br/sitemap.xml

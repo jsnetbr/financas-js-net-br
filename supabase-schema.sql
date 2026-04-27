@@ -45,6 +45,12 @@ alter table public.transactions
 alter table public.transactions
   add column if not exists source_month text;
 
+alter table public.transactions
+  add column if not exists is_paid boolean not null default false;
+
+alter table public.profiles
+  add column if not exists display_name text;
+
 alter table public.profiles enable row level security;
 alter table public.categories enable row level security;
 alter table public.transactions enable row level security;
