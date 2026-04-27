@@ -25,10 +25,15 @@ npm run dev
 
 - Login por email e senha.
 - Resumo mensal de entradas, saidas, saldo e previsto.
-- Lancamentos com categoria e data.
-- Categorias por usuario.
-- Recorrencias mensais simples.
+- Lancamentos com categoria, data, edicao e exclusao com confirmacao.
+- Categorias por usuario, separadas por entrada/saida, com edicao de nome/cor.
+- Recorrencias mensais com edicao, pausa, exclusao e bloqueio de duplicacao por mes.
+- PWA basico para instalar no celular.
 - Regras RLS para cada usuario ver apenas os proprios dados.
+
+## Atualizacao do banco
+
+Se o projeto ja tinha o SQL antigo, rode novamente o arquivo `supabase-schema.sql` no **SQL Editor**. Ele e seguro para repetir e adiciona o controle que evita gerar a mesma recorrencia duas vezes no mesmo mes.
 
 ## Confirmacao no Supabase
 

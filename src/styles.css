@@ -31,6 +31,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .loading-page,
 .auth-page {
   align-items: center;
@@ -137,6 +142,11 @@ select {
   min-height: 42px;
   padding: 10px 12px;
   width: 100%;
+}
+
+input[type="color"] {
+  min-height: 48px;
+  padding: 6px;
 }
 
 .primary-button,
@@ -439,6 +449,32 @@ select {
   padding: 6px 10px;
 }
 
+.status-pill {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  color: #c6d3e3;
+  font-size: 0.78rem;
+  font-weight: 800;
+  justify-self: start;
+  padding: 6px 10px;
+}
+
+.status-pill.success {
+  background: rgba(47, 158, 68, 0.18);
+  color: #9be4ad;
+}
+
+.card-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.card-actions.compact {
+  flex-wrap: nowrap;
+}
+
 .category-card {
   border-top: 4px solid #1971c2;
   display: grid;
@@ -452,6 +488,47 @@ select {
 
 .category-card strong {
   overflow-wrap: anywhere;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(4, 9, 14, 0.62);
+  backdrop-filter: blur(18px);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 18px;
+  position: fixed;
+  z-index: 20;
+}
+
+.modal-card {
+  backdrop-filter: blur(24px) saturate(150%);
+  background: rgba(22, 34, 48, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.38);
+  max-height: calc(100vh - 36px);
+  max-width: 520px;
+  overflow: auto;
+  padding: 18px;
+  width: 100%;
+}
+
+.modal-form {
+  display: grid;
+  gap: 12px;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.checkbox-row input {
+  min-height: auto;
+  width: auto;
 }
 
 @keyframes panel-in {
@@ -517,5 +594,23 @@ select {
   .tabbar button,
   .subtabbar button {
     justify-content: flex-start;
+  }
+
+  .card-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .card-row.footer {
+    align-items: stretch;
+  }
+
+  .card-actions,
+  .card-actions.compact {
+    width: 100%;
+  }
+
+  .card-actions .ghost-button {
+    flex: 1;
   }
 }

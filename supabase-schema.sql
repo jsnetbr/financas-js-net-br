@@ -39,6 +39,12 @@ create table if not exists public.recurring_transactions (
   created_at timestamptz not null default now()
 );
 
+alter table public.transactions
+  add column if not exists source_recurring_id uuid references public.recurring_transactions(id) on delete set null;
+
+alter table public.transactions
+  add column if not exists source_month text;
+
 alter table public.profiles enable row level security;
 alter table public.categories enable row level security;
 alter table public.transactions enable row level security;
@@ -81,3 +87,6 @@ create policy "recurring own delete" on public.recurring_transactions for delete
 create index if not exists categories_user_id_idx on public.categories(user_id);
 create index if not exists transactions_user_date_idx on public.transactions(user_id, entry_date);
 create index if not exists recurring_user_id_idx on public.recurring_transactions(user_id);
+create unique index if not exists transactions_recurring_month_unique_idx
+  on public.transactions(user_id, source_recurring_id, source_month)
+  where source_recurring_id is not null and source_month is not null;
