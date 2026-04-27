@@ -43,6 +43,7 @@ export function FinanceDashboard() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
   const [activeTab, setActiveTab] = useState<DashboardTab>("resumo");
+  const [activeCategoryType, setActiveCategoryType] = useState<EntryType>("saida");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [transactionForm, setTransactionForm] = useState<TransactionForm>({
@@ -65,6 +66,7 @@ export function FinanceDashboard() {
   const summary = useMemo(() => calculateSummary(transactions, recurring), [transactions, recurring]);
   const categoriesByType = categories.filter((item) => item.type === transactionForm.type);
   const recurringCategoriesByType = categories.filter((item) => item.type === recurringForm.type);
+  const visibleCategories = categories.filter((item) => item.type === activeCategoryType);
   const latestTransactions = transactions.slice(0, 4);
 
   useEffect(() => {
@@ -160,7 +162,7 @@ export function FinanceDashboard() {
     const { error } = await supabase.from("categories").insert({
       user_id: user.id,
       name: categoryName.trim(),
-      type: transactionForm.type,
+      type: activeCategoryType,
       color: palette[categories.length % palette.length],
     });
 
@@ -485,22 +487,24 @@ export function FinanceDashboard() {
             </div>
           </div>
 
-          <form className="category-form card-form" onSubmit={addCategory}>
-            <select
-              value={transactionForm.type}
-              onChange={(event) =>
-                setTransactionForm((current) => ({
-                  ...current,
-                  type: event.target.value as EntryType,
-                  category_id: "",
-                }))
-              }
+          <div className="subtabbar" aria-label="Tipo de categoria">
+            <button
+              className={activeCategoryType === "saida" ? "active" : ""}
+              onClick={() => setActiveCategoryType("saida")}
             >
-              <option value="saida">Saida</option>
-              <option value="entrada">Entrada</option>
-            </select>
+              Saidas
+            </button>
+            <button
+              className={activeCategoryType === "entrada" ? "active" : ""}
+              onClick={() => setActiveCategoryType("entrada")}
+            >
+              Entradas
+            </button>
+          </div>
+
+          <form className="category-form card-form" onSubmit={addCategory}>
             <input
-              placeholder="Nova categoria"
+              placeholder={`Nova categoria de ${activeCategoryType === "entrada" ? "entrada" : "saida"}`}
               value={categoryName}
               onChange={(event) => setCategoryName(event.target.value)}
             />
@@ -511,12 +515,16 @@ export function FinanceDashboard() {
           </form>
 
           <div className="category-grid">
-            {categories.map((item) => (
-              <article className="category-card" key={item.id} style={{ borderTopColor: item.color }}>
-                <span>{item.type === "entrada" ? "Entrada" : "Saida"}</span>
-                <strong>{item.name}</strong>
-              </article>
-            ))}
+            {visibleCategories.length === 0 ? (
+              <p className="empty-state">Nenhuma categoria neste grupo.</p>
+            ) : (
+              visibleCategories.map((item) => (
+                <article className="category-card" key={item.id} style={{ borderTopColor: item.color }}>
+                  <span>{item.type === "entrada" ? "Entrada" : "Saida"}</span>
+                  <strong>{item.name}</strong>
+                </article>
+              ))
+            )}
           </div>
         </section>
       )}

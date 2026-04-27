@@ -314,6 +314,32 @@ select {
   font-weight: 800;
 }
 
+.subtabbar {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  display: inline-grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  margin-bottom: 16px;
+  padding: 6px;
+}
+
+.subtabbar button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: #a8b7c9;
+  min-height: 38px;
+  padding: 8px 12px;
+}
+
+.subtabbar button.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: #edf4ff;
+  font-weight: 800;
+}
+
 .tab-panel {
   animation: panel-in 0.16s ease-out;
 }
@@ -329,7 +355,7 @@ select {
 }
 
 .category-form {
-  grid-template-columns: 160px minmax(180px, 1fr) auto;
+  grid-template-columns: minmax(180px, 1fr) auto;
   margin-bottom: 18px;
 }
 
@@ -472,7 +498,8 @@ select {
   .category-form,
   .card-grid,
   .category-grid,
-  .tabbar {
+  .tabbar,
+  .subtabbar {
     grid-template-columns: 1fr;
   }
 
@@ -482,11 +509,13 @@ select {
   .category-form,
   .card-grid,
   .category-grid,
-  .tabbar {
+  .tabbar,
+  .subtabbar {
     display: grid;
   }
 
-  .tabbar button {
+  .tabbar button,
+  .subtabbar button {
     justify-content: flex-start;
   }
 }
