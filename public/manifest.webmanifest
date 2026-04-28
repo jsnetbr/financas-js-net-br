@@ -3,12 +3,14 @@
   "short_name": "Financas",
   "description": "Controle financeiro pessoal simples para entradas, saidas, contas fixas e categorias.",
   "id": "/",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0b111a",
   "theme_color": "#0b111a",
+  "dir": "ltr",
+  "lang": "pt-BR",
   "categories": ["finance", "productivity"],
   "icons": [
     {
@@ -34,6 +36,15 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Resumo",
+      "short_name": "Resumo",
+      "description": "Abrir o resumo financeiro.",
+      "url": "/?source=pwa",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
     }
   ]
 }
