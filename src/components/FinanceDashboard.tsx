@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Repeat2,
   CheckCircle2,
+  Gauge,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   calculateSummary,
   Category,
+  CategoryLimit,
   dateKeyFromParts,
   defaultCategories,
   EntryType,
@@ -56,7 +58,7 @@ type CategoryForm = {
   color: string;
 };
 
-type DashboardTab = "resumo" | "lancamentos" | "recorrencias" | "categorias" | "configuracoes";
+type DashboardTab = "resumo" | "lancamentos" | "recorrencias" | "categorias" | "limites" | "configuracoes";
 
 type Profile = {
   id: string;
@@ -70,6 +72,7 @@ type PendingAction =
   | "refresh"
   | "transaction"
   | "category"
+  | "limit"
   | "recurring"
   | "paid"
   | "profile"
@@ -139,6 +142,7 @@ export function FinanceDashboard() {
   const { user, signOut } = useAuth();
   const [selectedMonth, setSelectedMonth] = useState(monthKey());
   const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryLimits, setCategoryLimits] = useState<CategoryLimit[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -160,6 +164,7 @@ export function FinanceDashboard() {
     notes: "",
   });
   const [categoryName, setCategoryName] = useState("");
+  const [limitForm, setLimitForm] = useState({ category_id: "", amount: "" });
   const [displayName, setDisplayName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -182,7 +187,20 @@ export function FinanceDashboard() {
   const categoriesByType = categories.filter((item) => item.type === transactionForm.type);
   const recurringCategoriesByType = categories.filter((item) => item.type === recurringForm.type);
   const visibleCategories = categories.filter((item) => item.type === activeCategoryType);
+  const expenseCategories = categories.filter((item) => item.type === "saida");
   const monthExpenses = transactions.filter((item) => item.type === "saida");
+  const limitRows = expenseCategories.map((category) => {
+    const limit = categoryLimits.find((item) => item.category_id === category.id);
+    const spent = monthExpenses
+      .filter((item) => item.category_id === category.id)
+      .reduce((total, item) => total + item.amount_cents, 0);
+    return {
+      category,
+      limit,
+      spent,
+      percent: limit ? Math.min(100, Math.round((spent / limit.amount_cents) * 100)) : 0,
+    };
+  });
   const isBusy = pendingAction !== null;
 
   function setMessage(text: string, tone?: NoticeTone) {
@@ -210,8 +228,9 @@ export function FinanceDashboard() {
       await ensureBaseData();
       const { start, end } = getMonthRange(selectedMonth);
 
-      const [categoryResult, transactionResult, recurringResult] = await Promise.all([
+      const [categoryResult, limitResult, transactionResult, recurringResult] = await Promise.all([
         supabase.from("categories").select("*").order("name"),
+        supabase.from("category_limits").select("id,category_id,amount_cents"),
         supabase
           .from("transactions")
           .select("*")
@@ -233,7 +252,7 @@ export function FinanceDashboard() {
         profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
       }
 
-      if (profileResult.error || categoryResult.error || transactionResult.error || recurringResult.error) {
+      if (profileResult.error || categoryResult.error || limitResult.error || transactionResult.error || recurringResult.error) {
         setMessage("Nao foi possivel carregar os dados agora.", "error");
       } else {
         const profileRow = profileResult.data as { id: string; email: string; display_name?: string | null } | null;
@@ -244,6 +263,7 @@ export function FinanceDashboard() {
         setDisplayName(nextProfile?.display_name ?? "");
         setNewEmail(user.email ?? "");
         setCategories(categoryResult.data ?? []);
+        setCategoryLimits(limitResult.data ?? []);
         setTransactions(transactionResult.data ?? []);
         setRecurring(recurringResult.data ?? []);
         if (showRefreshMessage) setMessage("Dados atualizados.");
@@ -419,6 +439,58 @@ export function FinanceDashboard() {
     } finally {
       setPendingAction(null);
     }
+  }
+
+  async function saveCategoryLimit(event: FormEvent) {
+    event.preventDefault();
+    if (!supabase || !user || isBusy) return;
+
+    const amount = toCents(limitForm.amount);
+    if (!limitForm.category_id || !amount) {
+      setMessage("Escolha uma categoria e informe o limite.");
+      return;
+    }
+
+    setPendingAction("limit");
+    try {
+      const { error } = await supabase.from("category_limits").upsert(
+        {
+          user_id: user.id,
+          category_id: limitForm.category_id,
+          amount_cents: amount,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,category_id" },
+      );
+
+      if (error) {
+        setMessage("Nao foi possivel salvar o limite.");
+        return;
+      }
+
+      setMessage("Limite salvo.");
+      setLimitForm({ category_id: "", amount: "" });
+      await loadData();
+    } catch {
+      setMessage("Nao foi possivel salvar o limite.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function deleteCategoryLimit(id: string) {
+    if (!supabase) return;
+    const client = supabase;
+    setConfirmDialog({
+      title: "Remover limite?",
+      message: "A categoria continua existindo, apenas o limite mensal sera removido.",
+      confirmLabel: "Remover",
+      onConfirm: async () => {
+        const { error } = await client.from("category_limits").delete().eq("id", id);
+        setMessage(error ? "Nao foi possivel remover o limite." : "Limite removido.");
+        await loadData();
+      },
+    });
   }
 
   async function addRecurring(event: FormEvent) {
@@ -786,6 +858,7 @@ export function FinanceDashboard() {
     { id: "lancamentos", label: "Lancamentos", icon: ReceiptText },
     { id: "recorrencias", label: "Recorrencias", icon: Repeat2 },
     { id: "categorias", label: "Categorias", icon: FolderOpen },
+    { id: "limites", label: "Limites", icon: Gauge },
     { id: "configuracoes", label: "Configuracoes", icon: Settings },
   ];
 
@@ -811,7 +884,9 @@ export function FinanceDashboard() {
     <main className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
       <aside className="sidebar" aria-label="Navegacao principal">
         <div className="sidebar-brand">
-          <div className="sidebar-mark">F</div>
+          <div className="sidebar-mark">
+            <img src="/icon.svg" alt="" aria-hidden="true" />
+          </div>
           <div className="sidebar-copy">
             <strong>Financas</strong>
             <span>{profileLabel}</span>
@@ -1176,6 +1251,94 @@ export function FinanceDashboard() {
                   </div>
                 </article>
               ))
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeTab === "limites" && (
+        <section className="tab-panel panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Controle mensal</p>
+              <h2>Limites por categoria</h2>
+            </div>
+          </div>
+
+          <form className="limit-form card-form" onSubmit={saveCategoryLimit}>
+            <select
+              value={limitForm.category_id}
+              onChange={(event) => {
+                const categoryId = event.target.value;
+                const currentLimit = categoryLimits.find((item) => item.category_id === categoryId);
+                setLimitForm({
+                  category_id: categoryId,
+                  amount: currentLimit ? centsToInput(currentLimit.amount_cents) : "",
+                });
+              }}
+            >
+              <option value="">Categoria de saida</option>
+              {expenseCategories.map((item) => (
+                <option value={item.id} key={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <input
+              placeholder="Limite mensal"
+              inputMode="decimal"
+              value={limitForm.amount}
+              onChange={(event) => setLimitForm((current) => ({ ...current, amount: event.target.value }))}
+            />
+            <button className="primary-button" disabled={isBusy}>
+              {pendingAction === "limit" ? "Salvando..." : "Salvar limite"}
+            </button>
+          </form>
+
+          <div className="limit-grid">
+            {limitRows.length === 0 ? (
+              <p className="empty-state">Crie categorias de saida para definir limites.</p>
+            ) : (
+              limitRows.map(({ category, limit, spent, percent }) => {
+                const exceeded = Boolean(limit && spent > limit.amount_cents);
+                return (
+                  <article className="limit-card" key={category.id}>
+                    <div className="card-row">
+                      <div>
+                        <span className="type-pill">Saida</span>
+                        <h3>{category.name}</h3>
+                      </div>
+                      {limit && (
+                        <button
+                          className="icon-button"
+                          onClick={() => deleteCategoryLimit(limit.id)}
+                          title="Remover limite"
+                          disabled={isBusy}
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="limit-values">
+                      <span>Gasto: {formatMoney(spent)}</span>
+                      <strong>{limit ? `Limite: ${formatMoney(limit.amount_cents)}` : "Sem limite"}</strong>
+                    </div>
+                    <div className="limit-meter" aria-label={`Uso do limite de ${category.name}`}>
+                      <span
+                        className={exceeded ? "exceeded" : ""}
+                        style={{ width: limit ? `${percent}%` : "0%" }}
+                      />
+                    </div>
+                    <p className={exceeded ? "limit-alert danger" : "limit-alert"}>
+                      {limit
+                        ? exceeded
+                          ? `Passou ${formatMoney(spent - limit.amount_cents)} do limite.`
+                          : `Ainda resta ${formatMoney(limit.amount_cents - spent)}.`
+                        : "Defina um valor para acompanhar essa categoria."}
+                    </p>
+                  </article>
+                );
+              })
             )}
           </div>
         </section>

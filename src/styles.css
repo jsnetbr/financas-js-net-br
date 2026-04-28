@@ -373,15 +373,20 @@ input[type="color"] {
 
 .sidebar-mark {
   align-items: center;
-  background: #17263a;
+  background: #0d1520;
   border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--blue);
   display: flex;
-  font-weight: 900;
   height: 42px;
   justify-content: center;
+  overflow: hidden;
   width: 42px;
+}
+
+.sidebar-mark img {
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .sidebar-copy {
@@ -679,6 +684,16 @@ input[type="color"] {
   padding: 12px;
 }
 
+.limit-form {
+  animation: panel-rise 0.3s var(--ease) both;
+  background: #0d1520;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  grid-template-columns: minmax(220px, 1fr) 160px auto;
+  margin-bottom: 20px;
+  padding: 12px;
+}
+
 .settings-grid {
   display: grid;
   gap: 14px;
@@ -725,14 +740,16 @@ input[type="color"] {
 }
 
 .card-grid,
-.category-grid {
+.category-grid,
+.limit-grid {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
 .data-card,
-.category-card {
+.category-card,
+.limit-card {
   animation: card-in 0.34s var(--ease) both;
   background: var(--surface-raised);
   border: 1px solid var(--border);
@@ -748,7 +765,8 @@ input[type="color"] {
 }
 
 .data-card:hover,
-.category-card:hover {
+.category-card:hover,
+.limit-card:hover {
   border-color: var(--border-strong);
   box-shadow: 0 14px 28px rgba(2, 6, 12, 0.18);
   transform: translateY(-2px);
@@ -888,6 +906,52 @@ input[type="color"] {
 
 .category-card strong {
   overflow-wrap: anywhere;
+}
+
+.limit-card {
+  display: grid;
+  gap: 12px;
+}
+
+.limit-card h3 {
+  margin: 10px 0 0;
+}
+
+.limit-values {
+  display: grid;
+  gap: 4px;
+}
+
+.limit-values span {
+  color: var(--muted);
+}
+
+.limit-meter {
+  background: #0d1520;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+}
+
+.limit-meter span {
+  background: var(--green);
+  display: block;
+  height: 100%;
+  transition: width 0.22s var(--ease);
+}
+
+.limit-meter span.exceeded {
+  background: var(--red);
+}
+
+.limit-alert {
+  color: var(--muted-strong);
+  margin: 0;
+}
+
+.limit-alert.danger {
+  color: #ffc3ca;
 }
 
 .modal-backdrop {
@@ -1039,6 +1103,7 @@ input[type="color"] {
   .entry-form,
   .recurring-form,
   .category-form,
+  .limit-form,
   .card-grid,
   .category-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1095,9 +1160,11 @@ input[type="color"] {
   .entry-form,
   .recurring-form,
   .category-form,
+  .limit-form,
   .settings-grid,
   .card-grid,
   .category-grid,
+  .limit-grid,
   .mobile-tabbar,
   .subtabbar {
     grid-template-columns: 1fr;
@@ -1107,9 +1174,11 @@ input[type="color"] {
   .entry-form,
   .recurring-form,
   .category-form,
+  .limit-form,
   .settings-grid,
   .card-grid,
   .category-grid,
+  .limit-grid,
   .mobile-tabbar,
   .subtabbar {
     display: grid;

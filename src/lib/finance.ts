@@ -7,6 +7,12 @@ export type Category = {
   color: string;
 };
 
+export type CategoryLimit = {
+  id: string;
+  category_id: string;
+  amount_cents: number;
+};
+
 export type Transaction = {
   id: string;
   type: EntryType;
