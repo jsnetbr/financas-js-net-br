@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Financas pessoais">
+  <defs>
+    <linearGradient id="bg" x1="16" y1="8" x2="112" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#182a3f"/>
+      <stop offset="1" stop-color="#08111c"/>
+    </linearGradient>
+    <linearGradient id="coin" x1="37" y1="28" x2="92" y2="102" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#77b7ff"/>
+      <stop offset="1" stop-color="#55c27c"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#bg)"/>
+  <path d="M31 82.5c13.7 16.2 43.9 18.1 63.9 3.1" fill="none" stroke="#55c27c" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="64" cy="62" r="35" fill="#0f1b2a" stroke="#2f4a68" stroke-width="5"/>
+  <path d="M64 37v50" fill="none" stroke="url(#coin)" stroke-width="7" stroke-linecap="round"/>
+  <path d="M78 48.5c-5.6-5.4-22-6.1-23 4.2-1.2 12.4 25.7 6.3 24 20.5-1.3 11.3-20.9 11-28.8 3.7" fill="none" stroke="#edf4ff" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="96" cy="35" r="9" fill="#6aa8ff"/>
+  <circle cx="96" cy="35" r="4" fill="#edf4ff" opacity=".9"/>
+</svg>

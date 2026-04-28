@@ -20,3 +20,6 @@
 
 /*.svg
   Cache-Control: public, max-age=604800
+
+/icon-v2*
+  Cache-Control: no-cache

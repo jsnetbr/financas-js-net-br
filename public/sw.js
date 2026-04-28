@@ -1,11 +1,11 @@
-const CACHE_NAME = "financas-app-shell-v3";
+const CACHE_NAME = "financas-app-shell-v4";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
-  "/icon.svg",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-maskable-512.png",
+  "/icon-v2.svg",
+  "/icon-v2-192.png",
+  "/icon-v2-512.png",
+  "/icon-v2-maskable-512.png",
 ];
 
 self.addEventListener("install", (event) => {

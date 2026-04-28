@@ -924,7 +924,7 @@ export function FinanceDashboard() {
       <aside className="sidebar" aria-label="Navegacao principal">
         <div className="sidebar-brand">
           <div className="sidebar-mark">
-            <img src="/icon.svg" alt="" aria-hidden="true" />
+            <img src="/icon-v2.svg" alt="" aria-hidden="true" />
           </div>
           <div className="sidebar-copy">
             <strong>Financas</strong>
