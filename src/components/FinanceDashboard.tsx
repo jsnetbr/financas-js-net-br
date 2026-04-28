@@ -22,6 +22,7 @@ import { useAuth } from "../context/AuthContext";
 import {
   calculateSummary,
   Category,
+  dateKeyFromParts,
   defaultCategories,
   EntryType,
   formatMoney,
@@ -63,6 +64,27 @@ type Profile = {
   display_name: string | null;
 };
 
+type NoticeTone = "info" | "success" | "error";
+
+type PendingAction =
+  | "refresh"
+  | "transaction"
+  | "category"
+  | "recurring"
+  | "paid"
+  | "profile"
+  | "email"
+  | "password"
+  | "confirm"
+  | null;
+
+type ConfirmDialog = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onConfirm: () => Promise<void>;
+};
+
 type MaybeDisplayNameError = {
   code?: string;
   message?: string;
@@ -83,10 +105,28 @@ function shiftMonthKey(value: string, delta: number) {
   const month = Number(monthText);
   if (!year || !month) return monthKey();
 
-  const normalized = new Date(Date.UTC(year, month - 1 + delta, 1));
-  const nextYear = normalized.getUTCFullYear();
-  const nextMonth = String(normalized.getUTCMonth() + 1).padStart(2, "0");
+  const totalMonths = year * 12 + (month - 1) + delta;
+  const nextYear = Math.floor(totalMonths / 12);
+  const nextMonth = String((totalMonths % 12) + 1).padStart(2, "0");
   return `${nextYear}-${nextMonth}`;
+}
+
+function inferNoticeTone(text: string): NoticeTone {
+  const normalized = text.toLowerCase();
+  if (
+    normalized.includes("nao foi possivel") ||
+    normalized.includes("preencha") ||
+    normalized.includes("informe") ||
+    normalized.includes("precisa") ||
+    normalized.includes("nao confere") ||
+    normalized.includes("ja foi") ||
+    normalized.includes("pausada") ||
+    normalized.includes("ainda nao")
+  ) {
+    return "error";
+  }
+
+  return "success";
 }
 
 function isMissingDisplayNameColumn(error: MaybeDisplayNameError | null) {
@@ -106,7 +146,10 @@ export function FinanceDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCategoryType, setActiveCategoryType] = useState<EntryType>("saida");
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState("");
+  const [message, setRawMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<NoticeTone>("info");
+  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const [supportsDisplayName, setSupportsDisplayName] = useState(true);
   const [transactionForm, setTransactionForm] = useState<TransactionForm>({
     type: "saida",
@@ -140,57 +183,77 @@ export function FinanceDashboard() {
   const recurringCategoriesByType = categories.filter((item) => item.type === recurringForm.type);
   const visibleCategories = categories.filter((item) => item.type === activeCategoryType);
   const monthExpenses = transactions.filter((item) => item.type === "saida");
+  const isBusy = pendingAction !== null;
+
+  function setMessage(text: string, tone?: NoticeTone) {
+    setRawMessage(text);
+    setMessageTone(text ? tone ?? inferNoticeTone(text) : "info");
+  }
 
   useEffect(() => {
     if (!user) return;
     loadData();
   }, [selectedMonth, user]);
 
-  async function loadData() {
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setRawMessage(""), 6500);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
+  async function loadData(showRefreshMessage = false) {
     if (!supabase || !user) return;
     setLoading(true);
-    setMessage("");
-    await ensureBaseData();
-    const { start, end } = getMonthRange(selectedMonth);
+    if (showRefreshMessage) setPendingAction("refresh");
 
-    const [categoryResult, transactionResult, recurringResult] = await Promise.all([
-      supabase.from("categories").select("*").order("name"),
-      supabase
-        .from("transactions")
-        .select("*")
-        .gte("entry_date", start)
-        .lt("entry_date", end)
-        .order("entry_date", { ascending: false }),
-      supabase.from("recurring_transactions").select("*").order("day_of_month"),
-    ]);
+    try {
+      await ensureBaseData();
+      const { start, end } = getMonthRange(selectedMonth);
 
-    let profileResult;
-    if (supportsDisplayName) {
-      profileResult = await supabase.from("profiles").select("id,email,display_name").eq("id", user.id).maybeSingle();
+      const [categoryResult, transactionResult, recurringResult] = await Promise.all([
+        supabase.from("categories").select("*").order("name"),
+        supabase
+          .from("transactions")
+          .select("*")
+          .gte("entry_date", start)
+          .lt("entry_date", end)
+          .order("entry_date", { ascending: false }),
+        supabase.from("recurring_transactions").select("*").order("day_of_month"),
+      ]);
 
-      if (isMissingDisplayNameColumn(profileResult.error as MaybeDisplayNameError | null)) {
-        setSupportsDisplayName(false);
+      let profileResult;
+      if (supportsDisplayName) {
+        profileResult = await supabase.from("profiles").select("id,email,display_name").eq("id", user.id).maybeSingle();
+
+        if (isMissingDisplayNameColumn(profileResult.error as MaybeDisplayNameError | null)) {
+          setSupportsDisplayName(false);
+          profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
+        }
+      } else {
         profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
       }
-    } else {
-      profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
-    }
 
-    if (profileResult.error || categoryResult.error || transactionResult.error || recurringResult.error) {
-      setMessage("Nao foi possivel carregar os dados. Confira se o SQL do Supabase foi aplicado.");
-    } else {
-      const profileRow = profileResult.data as { id: string; email: string; display_name?: string | null } | null;
-      const nextProfile = profileRow
-        ? { id: profileRow.id, email: profileRow.email, display_name: profileRow.display_name ?? null }
-        : null;
-      setProfile(nextProfile);
-      setDisplayName(nextProfile?.display_name ?? "");
-      setNewEmail(user.email ?? "");
-      setCategories(categoryResult.data ?? []);
-      setTransactions(transactionResult.data ?? []);
-      setRecurring(recurringResult.data ?? []);
+      if (profileResult.error || categoryResult.error || transactionResult.error || recurringResult.error) {
+        setMessage("Nao foi possivel carregar os dados agora.", "error");
+      } else {
+        const profileRow = profileResult.data as { id: string; email: string; display_name?: string | null } | null;
+        const nextProfile = profileRow
+          ? { id: profileRow.id, email: profileRow.email, display_name: profileRow.display_name ?? null }
+          : null;
+        setProfile(nextProfile);
+        setDisplayName(nextProfile?.display_name ?? "");
+        setNewEmail(user.email ?? "");
+        setCategories(categoryResult.data ?? []);
+        setTransactions(transactionResult.data ?? []);
+        setRecurring(recurringResult.data ?? []);
+        if (showRefreshMessage) setMessage("Dados atualizados.");
+      }
+    } catch {
+      setMessage("Nao foi possivel carregar os dados agora.", "error");
+    } finally {
+      setLoading(false);
+      if (showRefreshMessage) setPendingAction(null);
     }
-    setLoading(false);
   }
 
   async function ensureBaseData() {
@@ -213,7 +276,7 @@ export function FinanceDashboard() {
 
   async function addTransaction(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !user) return;
+    if (!supabase || !user || isBusy) return;
 
     const amount = toCents(transactionForm.amount);
     if (!amount || !transactionForm.description.trim() || !transactionForm.entry_date) {
@@ -221,35 +284,42 @@ export function FinanceDashboard() {
       return;
     }
 
-    const { error } = await supabase.from("transactions").insert({
-      user_id: user.id,
-      type: transactionForm.type,
-      description: transactionForm.description.trim(),
-      amount_cents: amount,
-      entry_date: transactionForm.entry_date,
-      category_id: transactionForm.category_id || null,
-      notes: transactionForm.notes.trim() || null,
-      is_paid: false,
-    });
+    setPendingAction("transaction");
+    try {
+      const { error } = await supabase.from("transactions").insert({
+        user_id: user.id,
+        type: transactionForm.type,
+        description: transactionForm.description.trim(),
+        amount_cents: amount,
+        entry_date: transactionForm.entry_date,
+        category_id: transactionForm.category_id || null,
+        notes: transactionForm.notes.trim() || null,
+        is_paid: false,
+      });
 
-    if (error) {
+      if (error) {
+        setMessage("Nao foi possivel salvar o lancamento.");
+        return;
+      }
+
+      setMessage("Lancamento salvo.");
+      setTransactionForm((current) => ({
+        ...current,
+        description: "",
+        amount: "",
+        notes: "",
+      }));
+      await loadData();
+    } catch {
       setMessage("Nao foi possivel salvar o lancamento.");
-      return;
+    } finally {
+      setPendingAction(null);
     }
-
-    setMessage("Lancamento salvo.");
-    setTransactionForm((current) => ({
-      ...current,
-      description: "",
-      amount: "",
-      notes: "",
-    }));
-    await loadData();
   }
 
   async function updateTransaction(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !editingTransaction) return;
+    if (!supabase || !editingTransaction || isBusy) return;
 
     const amount = toCents(editingTransaction.amount);
     if (!amount || !editingTransaction.description.trim() || !editingTransaction.entry_date) {
@@ -257,74 +327,103 @@ export function FinanceDashboard() {
       return;
     }
 
-    const { error } = await supabase
-      .from("transactions")
-      .update({
-        type: editingTransaction.type,
-        description: editingTransaction.description.trim(),
-        amount_cents: amount,
-        entry_date: editingTransaction.entry_date,
-        category_id: editingTransaction.category_id || null,
-        notes: editingTransaction.notes.trim() || null,
-      })
-      .eq("id", editingTransaction.id);
+    setPendingAction("transaction");
+    try {
+      const { error } = await supabase
+        .from("transactions")
+        .update({
+          type: editingTransaction.type,
+          description: editingTransaction.description.trim(),
+          amount_cents: amount,
+          entry_date: editingTransaction.entry_date,
+          category_id: editingTransaction.category_id || null,
+          notes: editingTransaction.notes.trim() || null,
+        })
+        .eq("id", editingTransaction.id);
 
-    if (error) {
+      if (error) {
+        setMessage("Nao foi possivel atualizar o lancamento.");
+        return;
+      }
+
+      setEditingTransaction(null);
+      setMessage("Lancamento atualizado.");
+      await loadData();
+    } catch {
       setMessage("Nao foi possivel atualizar o lancamento.");
-      return;
+    } finally {
+      setPendingAction(null);
     }
-
-    setEditingTransaction(null);
-    setMessage("Lancamento atualizado.");
-    await loadData();
   }
 
   async function addCategory(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !user || !categoryName.trim()) return;
-
-    const { error } = await supabase.from("categories").insert({
-      user_id: user.id,
-      name: categoryName.trim(),
-      type: activeCategoryType,
-      color: palette[categories.length % palette.length],
-    });
-
-    if (error) {
-      setMessage("Nao foi possivel criar a categoria.");
+    if (!supabase || !user || isBusy) return;
+    if (!categoryName.trim()) {
+      setMessage("Informe o nome da categoria.");
       return;
     }
 
-    setMessage("Categoria criada.");
-    setCategoryName("");
-    await loadData();
+    setPendingAction("category");
+    try {
+      const { error } = await supabase.from("categories").insert({
+        user_id: user.id,
+        name: categoryName.trim(),
+        type: activeCategoryType,
+        color: palette[categories.length % palette.length],
+      });
+
+      if (error) {
+        setMessage("Nao foi possivel criar a categoria.");
+        return;
+      }
+
+      setMessage("Categoria criada.");
+      setCategoryName("");
+      await loadData();
+    } catch {
+      setMessage("Nao foi possivel criar a categoria.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function updateCategory(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !editingCategory || !editingCategory.name.trim()) return;
-
-    const { error } = await supabase
-      .from("categories")
-      .update({
-        name: editingCategory.name.trim(),
-        color: editingCategory.color,
-      })
-      .eq("id", editingCategory.id);
-
-    if (error) {
-      setMessage("Nao foi possivel atualizar a categoria.");
+    if (!supabase || !editingCategory || isBusy) return;
+    if (!editingCategory.name.trim()) {
+      setMessage("Informe o nome da categoria.");
       return;
     }
 
-    setEditingCategory(null);
-    setMessage("Categoria atualizada.");
-    await loadData();
+    setPendingAction("category");
+    try {
+      const { error } = await supabase
+        .from("categories")
+        .update({
+          name: editingCategory.name.trim(),
+          color: editingCategory.color,
+        })
+        .eq("id", editingCategory.id);
+
+      if (error) {
+        setMessage("Nao foi possivel atualizar a categoria.");
+        return;
+      }
+
+      setEditingCategory(null);
+      setMessage("Categoria atualizada.");
+      await loadData();
+    } catch {
+      setMessage("Nao foi possivel atualizar a categoria.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function addRecurring(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !user) return;
+    if (!supabase || !user || isBusy) return;
 
     const amount = toCents(recurringForm.amount);
     const day = Number(recurringForm.day_of_month);
@@ -333,29 +432,36 @@ export function FinanceDashboard() {
       return;
     }
 
-    const { error } = await supabase.from("recurring_transactions").insert({
-      user_id: user.id,
-      type: recurringForm.type,
-      description: recurringForm.description.trim(),
-      amount_cents: amount,
-      category_id: recurringForm.category_id || null,
-      day_of_month: day,
-      is_active: true,
-    });
+    setPendingAction("recurring");
+    try {
+      const { error } = await supabase.from("recurring_transactions").insert({
+        user_id: user.id,
+        type: recurringForm.type,
+        description: recurringForm.description.trim(),
+        amount_cents: amount,
+        category_id: recurringForm.category_id || null,
+        day_of_month: day,
+        is_active: true,
+      });
 
-    if (error) {
+      if (error) {
+        setMessage("Nao foi possivel salvar a recorrencia.");
+        return;
+      }
+
+      setMessage("Recorrencia salva.");
+      setRecurringForm((current) => ({ ...current, description: "", amount: "" }));
+      await loadData();
+    } catch {
       setMessage("Nao foi possivel salvar a recorrencia.");
-      return;
+    } finally {
+      setPendingAction(null);
     }
-
-    setMessage("Recorrencia salva.");
-    setRecurringForm((current) => ({ ...current, description: "", amount: "" }));
-    await loadData();
   }
 
   async function updateRecurring(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !editingRecurring) return;
+    if (!supabase || !editingRecurring || isBusy) return;
 
     const amount = toCents(editingRecurring.amount);
     const day = Number(editingRecurring.day_of_month);
@@ -364,61 +470,109 @@ export function FinanceDashboard() {
       return;
     }
 
-    const { error } = await supabase
-      .from("recurring_transactions")
-      .update({
-        type: editingRecurring.type,
-        description: editingRecurring.description.trim(),
-        amount_cents: amount,
-        category_id: editingRecurring.category_id || null,
-        day_of_month: day,
-        is_active: editingRecurring.is_active,
-      })
-      .eq("id", editingRecurring.id);
+    setPendingAction("recurring");
+    try {
+      const { error } = await supabase
+        .from("recurring_transactions")
+        .update({
+          type: editingRecurring.type,
+          description: editingRecurring.description.trim(),
+          amount_cents: amount,
+          category_id: editingRecurring.category_id || null,
+          day_of_month: day,
+          is_active: editingRecurring.is_active,
+        })
+        .eq("id", editingRecurring.id);
 
-    if (error) {
+      if (error) {
+        setMessage("Nao foi possivel atualizar a recorrencia.");
+        return;
+      }
+
+      setEditingRecurring(null);
+      setMessage("Recorrencia atualizada.");
+      await loadData();
+    } catch {
       setMessage("Nao foi possivel atualizar a recorrencia.");
-      return;
+    } finally {
+      setPendingAction(null);
     }
-
-    setEditingRecurring(null);
-    setMessage("Recorrencia atualizada.");
-    await loadData();
   }
 
   async function deleteTransaction(id: string) {
     if (!supabase) return;
-    if (!window.confirm("Apagar este lancamento?")) return;
-    const { error } = await supabase.from("transactions").delete().eq("id", id);
-    setMessage(error ? "Nao foi possivel apagar o lancamento." : "Lancamento apagado.");
-    await loadData();
+    const client = supabase;
+    setConfirmDialog({
+      title: "Apagar lancamento?",
+      message: "Esta acao remove o lancamento deste mes.",
+      confirmLabel: "Apagar",
+      onConfirm: async () => {
+        const { error } = await client.from("transactions").delete().eq("id", id);
+        setMessage(error ? "Nao foi possivel apagar o lancamento." : "Lancamento apagado.");
+        await loadData();
+      },
+    });
   }
 
   async function deleteCategory(id: string) {
     if (!supabase) return;
-    if (!window.confirm("Apagar esta categoria? Lancamentos antigos ficam sem categoria.")) return;
-    const { error } = await supabase.from("categories").delete().eq("id", id);
-    setMessage(error ? "Nao foi possivel apagar a categoria." : "Categoria apagada.");
-    await loadData();
+    const client = supabase;
+    setConfirmDialog({
+      title: "Apagar categoria?",
+      message: "Lancamentos antigos continuam salvos e ficam sem categoria.",
+      confirmLabel: "Apagar",
+      onConfirm: async () => {
+        const { error } = await client.from("categories").delete().eq("id", id);
+        setMessage(error ? "Nao foi possivel apagar a categoria." : "Categoria apagada.");
+        await loadData();
+      },
+    });
   }
 
   async function deleteRecurring(id: string) {
     if (!supabase) return;
-    if (!window.confirm("Apagar esta recorrencia? Lancamentos ja gerados continuam salvos.")) return;
-    const { error } = await supabase.from("recurring_transactions").delete().eq("id", id);
-    setMessage(error ? "Nao foi possivel apagar a recorrencia." : "Recorrencia apagada.");
-    await loadData();
+    const client = supabase;
+    setConfirmDialog({
+      title: "Apagar recorrencia?",
+      message: "Lancamentos ja gerados continuam salvos.",
+      confirmLabel: "Apagar",
+      onConfirm: async () => {
+        const { error } = await client.from("recurring_transactions").delete().eq("id", id);
+        setMessage(error ? "Nao foi possivel apagar a recorrencia." : "Recorrencia apagada.");
+        await loadData();
+      },
+    });
+  }
+
+  async function confirmCurrentAction() {
+    if (!confirmDialog || isBusy) return;
+    setPendingAction("confirm");
+    try {
+      await confirmDialog.onConfirm();
+      setConfirmDialog(null);
+    } catch {
+      setMessage("Nao foi possivel concluir a acao.", "error");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function toggleRecurring(item: RecurringTransaction) {
-    if (!supabase) return;
-    const { error } = await supabase
-      .from("recurring_transactions")
-      .update({ is_active: !item.is_active })
-      .eq("id", item.id);
+    if (!supabase || isBusy) return;
+    setPendingAction("recurring");
+    try {
+      const { error } = await supabase
+        .from("recurring_transactions")
+        .update({ is_active: !item.is_active })
+        .eq("id", item.id);
 
-    setMessage(error ? "Nao foi possivel alterar a recorrencia." : "Recorrencia atualizada.");
-    await loadData();
+      setMessage(error ? "Nao foi possivel alterar a recorrencia." : "Recorrencia atualizada.");
+      await loadData();
+    } catch {
+      setMessage("Nao foi possivel alterar a recorrencia.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   function recurringAlreadyGenerated(item: RecurringTransaction) {
@@ -449,7 +603,7 @@ export function FinanceDashboard() {
     }
 
     const [year, month] = selectedMonth.split("-").map(Number);
-    const date = new Date(year, month - 1, item.day_of_month).toISOString().slice(0, 10);
+    const date = dateKeyFromParts(year, month, item.day_of_month);
     const payload = {
       user_id: user.id,
       type: item.type,
@@ -463,84 +617,80 @@ export function FinanceDashboard() {
       is_paid: false,
     };
 
-    const { error } = await supabase.from("transactions").insert(payload);
+    setPendingAction("recurring");
+    try {
+      const { error } = await supabase.from("transactions").insert(payload);
 
-    if (error) {
-      const isMigrationMissing =
-        error.message.includes("source_recurring_id") || error.message.includes("source_month");
-
-      if (!isMigrationMissing) {
-        setMessage("Nao foi possivel gerar o lancamento.");
+      if (error) {
+        setMessage(error.code === "23505" ? "Esta recorrencia ja foi gerada neste mes." : "Nao foi possivel gerar o lancamento.");
         return;
       }
 
-      const { error: fallbackError } = await supabase.from("transactions").insert({
-        user_id: payload.user_id,
-        type: payload.type,
-        description: payload.description,
-        amount_cents: payload.amount_cents,
-        entry_date: payload.entry_date,
-        category_id: payload.category_id,
-        notes: payload.notes,
-        is_paid: false,
-      });
-
-      if (fallbackError) {
-        setMessage("Nao foi possivel gerar o lancamento.");
-        return;
-      }
-
-      setMessage("Lancamento gerado. Rode o SQL atualizado para ativar o bloqueio reforcado.");
+      setMessage("Lancamento gerado.");
       await loadData();
-      return;
+    } catch {
+      setMessage("Nao foi possivel gerar o lancamento.");
+    } finally {
+      setPendingAction(null);
     }
-
-    setMessage("Lancamento gerado.");
-    await loadData();
   }
 
   async function toggleTransactionPaid(item: Transaction) {
-    if (!supabase || item.type !== "saida") return;
-    const { error } = await supabase
-      .from("transactions")
-      .update({ is_paid: !item.is_paid })
-      .eq("id", item.id);
+    if (!supabase || item.type !== "saida" || isBusy) return;
+    setPendingAction("paid");
+    try {
+      const { error } = await supabase
+        .from("transactions")
+        .update({ is_paid: !item.is_paid })
+        .eq("id", item.id);
 
-    setMessage(error ? "Nao foi possivel alterar o status de pagamento." : "Status atualizado.");
-    await loadData();
+      setMessage(error ? "Nao foi possivel alterar o status de pagamento." : "Status atualizado.");
+      await loadData();
+    } catch {
+      setMessage("Nao foi possivel alterar o status de pagamento.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function updateDisplayName(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !user) return;
+    if (!supabase || !user || isBusy) return;
     if (!supportsDisplayName) {
-      setMessage("Nome exibido ainda nao esta ativo. Rode o SQL no Supabase e atualize a pagina.");
+      setMessage("Nome exibido indisponivel no momento. Atualize a pagina e tente de novo.");
       return;
     }
 
     const nextName = displayName.trim();
-    const { error } = await supabase
-      .from("profiles")
-      .update({ display_name: nextName || null, email: user.email ?? "" })
-      .eq("id", user.id);
+    setPendingAction("profile");
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ display_name: nextName || null, email: user.email ?? "" })
+        .eq("id", user.id);
 
-    if (error) {
+      if (error) {
+        setMessage("Nao foi possivel salvar o nome exibido.");
+        return;
+      }
+
+      setProfile((current) =>
+        current
+          ? { ...current, display_name: nextName || null, email: user.email ?? current.email }
+          : { id: user.id, email: user.email ?? "", display_name: nextName || null },
+      );
+      setDisplayName(nextName);
+      setMessage("Nome exibido salvo.");
+    } catch {
       setMessage("Nao foi possivel salvar o nome exibido.");
-      return;
+    } finally {
+      setPendingAction(null);
     }
-
-    setProfile((current) =>
-      current
-        ? { ...current, display_name: nextName || null, email: user.email ?? current.email }
-        : { id: user.id, email: user.email ?? "", display_name: nextName || null },
-    );
-    setDisplayName(nextName);
-    setMessage("Nome exibido salvo.");
   }
 
   async function updateEmail(event: FormEvent) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!supabase || isBusy) return;
 
     const email = newEmail.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -548,17 +698,24 @@ export function FinanceDashboard() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ email });
-    setMessage(
-      error
-        ? "Nao foi possivel atualizar o email."
-        : "Pedido de troca enviado. Confira o email para confirmar, se o Supabase pedir.",
-    );
+    setPendingAction("email");
+    try {
+      const { error } = await supabase.auth.updateUser({ email });
+      setMessage(
+        error
+          ? "Nao foi possivel atualizar o email."
+          : "Pedido de troca enviado. Confira seu email para confirmar.",
+      );
+    } catch {
+      setMessage("Nao foi possivel atualizar o email.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function updatePassword(event: FormEvent) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!supabase || isBusy) return;
 
     if (newPassword.length < 6) {
       setMessage("A nova senha precisa ter pelo menos 6 caracteres.");
@@ -570,15 +727,22 @@ export function FinanceDashboard() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) {
-      setMessage("Nao foi possivel atualizar a senha.");
-      return;
-    }
+    setPendingAction("password");
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setMessage("Nao foi possivel atualizar a senha.");
+        return;
+      }
 
-    setNewPassword("");
-    setConfirmPassword("");
-    setMessage("Senha atualizada.");
+      setNewPassword("");
+      setConfirmPassword("");
+      setMessage("Senha atualizada.");
+    } catch {
+      setMessage("Nao foi possivel atualizar a senha.");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   function categoryNameFor(id: string | null) {
@@ -696,7 +860,7 @@ export function FinanceDashboard() {
         </div>
       </header>
 
-      {message && <div className="notice">{message}</div>}
+      {message && <div className={`notice ${messageTone}`}>{message}</div>}
 
       <nav className="mobile-tabbar" aria-label="Areas do app">
         {navigation}
@@ -716,9 +880,9 @@ export function FinanceDashboard() {
                 <p className="eyebrow">Mes filtrado</p>
                 <h2>Saidas do mes</h2>
               </div>
-              <button className="ghost-button" onClick={loadData}>
+              <button className="ghost-button" onClick={() => loadData(true)} disabled={isBusy}>
                 <RefreshCw size={16} />
-                Atualizar
+                {pendingAction === "refresh" ? "Atualizando..." : "Atualizar"}
               </button>
             </div>
             <TransactionCards
@@ -729,6 +893,7 @@ export function FinanceDashboard() {
               editTransaction={beginEditTransaction}
               togglePaid={toggleTransactionPaid}
               emptyMessage="Nenhuma saida neste mes."
+              isBusy={isBusy}
             />
           </section>
         </section>
@@ -741,9 +906,9 @@ export function FinanceDashboard() {
               <p className="eyebrow">Entradas e saidas</p>
               <h2>Lancamentos do mes</h2>
             </div>
-            <button className="ghost-button" onClick={loadData}>
+            <button className="ghost-button" onClick={() => loadData(true)} disabled={isBusy}>
               <RefreshCw size={16} />
-              Atualizar
+              {pendingAction === "refresh" ? "Atualizando..." : "Atualizar"}
             </button>
           </div>
 
@@ -796,9 +961,9 @@ export function FinanceDashboard() {
                 </option>
               ))}
             </select>
-            <button className="primary-button">
+            <button className="primary-button" disabled={isBusy}>
               <Plus size={16} />
-              Salvar
+              {pendingAction === "transaction" ? "Salvando..." : "Salvar"}
             </button>
           </form>
 
@@ -809,6 +974,7 @@ export function FinanceDashboard() {
             deleteTransaction={deleteTransaction}
             editTransaction={beginEditTransaction}
             togglePaid={toggleTransactionPaid}
+            isBusy={isBusy}
           />
         </section>
       )}
@@ -872,9 +1038,9 @@ export function FinanceDashboard() {
                 </option>
               ))}
             </select>
-            <button className="primary-button">
+            <button className="primary-button" disabled={isBusy}>
               <Plus size={16} />
-              Salvar recorrencia
+              {pendingAction === "recurring" ? "Salvando..." : "Salvar recorrencia"}
             </button>
           </form>
 
@@ -898,21 +1064,36 @@ export function FinanceDashboard() {
                       {generated ? "Gerada neste mes" : item.is_active ? "Ativa" : "Pausada"}
                     </span>
                     <div className="card-actions">
-                      <button className="ghost-button" onClick={() => createFromRecurring(item)} disabled={generated}>
+                      <button
+                        className="ghost-button"
+                        onClick={() => createFromRecurring(item)}
+                        disabled={generated || isBusy}
+                      >
                         <Plus size={16} />
                         Gerar
                       </button>
-                      <button className="icon-button" onClick={() => beginEditRecurring(item)} title="Editar">
+                      <button
+                        className="icon-button"
+                        onClick={() => beginEditRecurring(item)}
+                        title="Editar"
+                        disabled={isBusy}
+                      >
                         <Pencil size={16} />
                       </button>
                       <button
                         className="icon-button"
                         onClick={() => toggleRecurring(item)}
                         title={item.is_active ? "Pausar" : "Ativar"}
+                        disabled={isBusy}
                       >
                         {item.is_active ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
                       </button>
-                      <button className="icon-button" onClick={() => deleteRecurring(item.id)} title="Apagar">
+                      <button
+                        className="icon-button"
+                        onClick={() => deleteRecurring(item.id)}
+                        title="Apagar"
+                        disabled={isBusy}
+                      >
                         <Trash2 size={16} />
                       </button>
                     </div>
@@ -954,9 +1135,9 @@ export function FinanceDashboard() {
               value={categoryName}
               onChange={(event) => setCategoryName(event.target.value)}
             />
-            <button className="primary-button">
+            <button className="primary-button" disabled={isBusy}>
               <Plus size={16} />
-              Adicionar
+              {pendingAction === "category" ? "Adicionando..." : "Adicionar"}
             </button>
           </form>
 
@@ -980,10 +1161,16 @@ export function FinanceDashboard() {
                         })
                       }
                       title="Editar"
+                      disabled={isBusy}
                     >
                       <Pencil size={16} />
                     </button>
-                    <button className="icon-button" onClick={() => deleteCategory(item.id)} title="Apagar">
+                    <button
+                      className="icon-button"
+                      onClick={() => deleteCategory(item.id)}
+                      title="Apagar"
+                      disabled={isBusy}
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -1018,14 +1205,16 @@ export function FinanceDashboard() {
                   onChange={(event) => setDisplayName(event.target.value)}
                 />
               </label>
-              <button className="primary-button">Salvar nome</button>
+              <button className="primary-button" disabled={isBusy}>
+                {pendingAction === "profile" ? "Salvando..." : "Salvar nome"}
+              </button>
             </form>
 
             <form className="settings-card" onSubmit={updateEmail}>
               <div>
                 <p className="eyebrow">Acesso</p>
                 <h3>Email</h3>
-                <p>O Supabase pode pedir confirmacao no email atual e no novo email.</p>
+                <p>Pode ser preciso confirmar a troca no email atual e no novo email.</p>
               </div>
               <label>
                 Novo email
@@ -1036,7 +1225,9 @@ export function FinanceDashboard() {
                   onChange={(event) => setNewEmail(event.target.value)}
                 />
               </label>
-              <button className="primary-button">Atualizar email</button>
+              <button className="primary-button" disabled={isBusy}>
+                {pendingAction === "email" ? "Enviando..." : "Atualizar email"}
+              </button>
             </form>
 
             <form className="settings-card" onSubmit={updatePassword}>
@@ -1061,7 +1252,9 @@ export function FinanceDashboard() {
                   onChange={(event) => setConfirmPassword(event.target.value)}
                 />
               </label>
-              <button className="primary-button">Atualizar senha</button>
+              <button className="primary-button" disabled={isBusy}>
+                {pendingAction === "password" ? "Atualizando..." : "Atualizar senha"}
+              </button>
             </form>
           </div>
         </section>
@@ -1135,7 +1328,9 @@ export function FinanceDashboard() {
                 )
               }
             />
-            <button className="primary-button">Salvar alteracoes</button>
+            <button className="primary-button" disabled={isBusy}>
+              {pendingAction === "transaction" ? "Salvando..." : "Salvar alteracoes"}
+            </button>
           </form>
         </Modal>
       )}
@@ -1156,7 +1351,9 @@ export function FinanceDashboard() {
                 setEditingCategory((current) => (current ? { ...current, color: event.target.value } : current))
               }
             />
-            <button className="primary-button">Salvar categoria</button>
+            <button className="primary-button" disabled={isBusy}>
+              {pendingAction === "category" ? "Salvando..." : "Salvar categoria"}
+            </button>
           </form>
         </Modal>
       )}
@@ -1233,8 +1430,23 @@ export function FinanceDashboard() {
               />
               Recorrencia ativa
             </label>
-            <button className="primary-button">Salvar recorrencia</button>
+            <button className="primary-button" disabled={isBusy}>
+              {pendingAction === "recurring" ? "Salvando..." : "Salvar recorrencia"}
+            </button>
           </form>
+        </Modal>
+      )}
+      {confirmDialog && (
+        <Modal title={confirmDialog.title} onClose={() => setConfirmDialog(null)}>
+          <p className="confirm-message">{confirmDialog.message}</p>
+          <div className="modal-actions">
+            <button className="ghost-button" onClick={() => setConfirmDialog(null)} disabled={isBusy}>
+              Cancelar
+            </button>
+            <button className="danger-button" onClick={confirmCurrentAction} disabled={isBusy}>
+              {pendingAction === "confirm" ? "Aguarde..." : confirmDialog.confirmLabel}
+            </button>
+          </div>
         </Modal>
       )}
       </section>
@@ -1259,6 +1471,7 @@ function TransactionCards({
   editTransaction,
   togglePaid,
   emptyMessage = "Nenhum lancamento neste mes.",
+  isBusy,
 }: {
   transactions: Transaction[];
   loading: boolean;
@@ -1267,6 +1480,7 @@ function TransactionCards({
   editTransaction: (item: Transaction) => void;
   togglePaid: (item: Transaction) => Promise<void>;
   emptyMessage?: string;
+  isBusy: boolean;
 }) {
   if (loading) {
     return <p className="empty-state">Carregando...</p>;
@@ -1301,15 +1515,21 @@ function TransactionCards({
                   className={item.is_paid ? "ghost-button paid-action" : "ghost-button"}
                   onClick={() => togglePaid(item)}
                   title={item.is_paid ? "Desmarcar pagamento" : "Marcar como pago"}
+                  disabled={isBusy}
                 >
                   <CheckCircle2 size={16} />
                   {item.is_paid ? "Desmarcar" : "Marcar pago"}
                 </button>
               )}
-              <button className="icon-button" onClick={() => editTransaction(item)} title="Editar">
+              <button className="icon-button" onClick={() => editTransaction(item)} title="Editar" disabled={isBusy}>
                 <Pencil size={16} />
               </button>
-              <button className="icon-button" onClick={() => deleteTransaction(item.id)} title="Apagar">
+              <button
+                className="icon-button"
+                onClick={() => deleteTransaction(item.id)}
+                title="Apagar"
+                disabled={isBusy}
+              >
                 <Trash2 size={16} />
               </button>
             </div>

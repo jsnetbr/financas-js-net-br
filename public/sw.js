@@ -1,4 +1,4 @@
-const CACHE_NAME = "financas-app-shell-v1";
+const CACHE_NAME = "financas-app-shell-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png"];
 
 self.addEventListener("install", (event) => {
@@ -20,9 +20,13 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") {
+    return;
+  }
+
   const requestUrl = new URL(event.request.url);
 
-  if (requestUrl.origin !== self.location.origin || requestUrl.pathname.startsWith("/rest/")) {
+  if (requestUrl.origin !== self.location.origin) {
     return;
   }
 
@@ -31,5 +35,15 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+  event.respondWith(
+    caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+
+      return fetch(event.request).then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return response;
+      });
+    }),
+  );
 });

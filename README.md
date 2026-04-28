@@ -48,15 +48,25 @@ Use:
 npm run build
 ```
 
-Depois do deploy, confira se `https://financas.js.net.br/manifest.webmanifest` abre e se o navegador oferece a instalacao do app.
+O projeto nao usa `_redirects`, porque essa regra pode causar loop no deploy via Wrangler/Cloudflare. Depois do deploy, confira se `https://financas.js.net.br/manifest.webmanifest` abre e se o navegador oferece a instalacao do app.
 
 ## PWA
 
-O service worker guarda apenas o casco do app para melhorar a instalacao e abertura. Ele nao guarda dados do Supabase offline.
+O service worker guarda apenas o casco do app e assets estaticos para melhorar a instalacao e abertura. Ele nao guarda dados do Supabase offline.
 
 ## Atualizacao do banco
 
 Se o projeto ja tinha o SQL antigo, rode novamente o arquivo `supabase-schema.sql` no **SQL Editor**. Ele e seguro para repetir e adiciona o controle que evita gerar a mesma recorrencia duas vezes no mesmo mes, o status de pagamento e o nome exibido do perfil.
+
+## Checklist de producao
+
+Antes de entregar para uso real:
+
+1. Rodar `supabase-schema.sql` no Supabase.
+2. Rodar `npm run build`.
+3. Fazer deploy no Cloudflare com as variaveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+4. Testar login, criacao de lancamento, marcar pago, gerar recorrencia, troca de mes e recuperacao de senha.
+5. No Supabase Auth, ativar protecao contra senhas vazadas se estiver disponivel no plano.
 
 ## Confirmacao no Supabase
 

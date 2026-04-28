@@ -7,6 +7,7 @@ type AuthContextValue = {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (email: string, password: string) => Promise<string | null>;
+  resetPassword: (email: string) => Promise<string | null>;
   signOut: () => Promise<void>;
 };
 
@@ -63,6 +64,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!supabase) return "Configure o Supabase antes de criar conta.";
         const { error } = await supabase.auth.signUp({ email, password });
         return error ? "Nao foi possivel criar a conta. Verifique os dados." : null;
+      },
+      async resetPassword(email) {
+        if (!supabase) return "Configure o Supabase antes de recuperar a senha.";
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        });
+        return error ? "Nao foi possivel enviar o email de recuperacao." : null;
       },
       async signOut() {
         await supabase?.auth.signOut();

@@ -1,22 +1,31 @@
 import { FormEvent, useState } from "react";
 import { Landmark } from "lucide-react";
-import { isSupabaseConfigured } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { isSupabaseConfigured } from "../lib/supabase";
+
+type MessageTone = "info" | "success" | "error";
 
 export function AuthScreen() {
-  const { signIn, signUp } = useAuth();
+  const { resetPassword, signIn, signUp } = useAuth();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<MessageTone>("info");
   const [busy, setBusy] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+
+  function showMessage(text: string, tone: MessageTone) {
+    setMessage(text);
+    setMessageTone(tone);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setMessage("");
 
     if (!email.includes("@") || password.length < 6) {
-      setMessage("Use um email valido e senha com pelo menos 6 caracteres.");
+      showMessage("Use um email valido e senha com pelo menos 6 caracteres.", "error");
       return;
     }
 
@@ -25,13 +34,27 @@ export function AuthScreen() {
     setBusy(false);
 
     if (error) {
-      setMessage(error);
+      showMessage(error, "error");
       return;
     }
 
     if (mode === "signup") {
-      setMessage("Conta criada. Se o Supabase pedir confirmacao, veja seu email.");
+      showMessage("Conta criada. Confira seu email se a confirmacao for solicitada.", "success");
     }
+  }
+
+  async function handlePasswordReset() {
+    setMessage("");
+
+    if (!email.includes("@")) {
+      showMessage("Informe seu email para recuperar a senha.", "error");
+      return;
+    }
+
+    setRecovering(true);
+    const error = await resetPassword(email);
+    setRecovering(false);
+    showMessage(error ?? "Email de recuperacao enviado. Confira sua caixa de entrada.", error ? "error" : "success");
   }
 
   return (
@@ -71,10 +94,20 @@ export function AuthScreen() {
               type="password"
             />
           </label>
-          {message && <p className="form-message">{message}</p>}
+          {message && <p className={`form-message ${messageTone}`}>{message}</p>}
           <button className="primary-button" disabled={busy || !isSupabaseConfigured}>
             {busy ? "Aguarde..." : mode === "login" ? "Entrar" : "Criar conta"}
           </button>
+          {mode === "login" && (
+            <button
+              className="link-button"
+              disabled={busy || recovering || !isSupabaseConfigured}
+              onClick={handlePasswordReset}
+              type="button"
+            >
+              {recovering ? "Enviando..." : "Esqueci minha senha"}
+            </button>
+          )}
         </form>
       </section>
     </main>

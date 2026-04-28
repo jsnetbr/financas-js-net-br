@@ -55,17 +55,22 @@ export function formatMoney(cents: number) {
   }).format(cents / 100);
 }
 
+export function dateKeyFromParts(year: number, month: number, day: number) {
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 export function monthKey(date = new Date()) {
-  return date.toISOString().slice(0, 7);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export function getMonthRange(key: string) {
   const [year, month] = key.split("-").map(Number);
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 1);
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+
   return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10),
+    start: dateKeyFromParts(year, month, 1),
+    end: dateKeyFromParts(nextYear, nextMonth, 1),
   };
 }
 

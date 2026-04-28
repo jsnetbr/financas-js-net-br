@@ -55,6 +55,11 @@ button:disabled {
   opacity: 0.48;
 }
 
+button:disabled:hover {
+  box-shadow: none;
+  transform: none;
+}
+
 .loading-page,
 .auth-page {
   align-items: center;
@@ -197,7 +202,9 @@ input[type="color"] {
 
 .primary-button,
 .ghost-button,
-.icon-button {
+.icon-button,
+.danger-button,
+.link-button {
   align-items: center;
   border-radius: 6px;
   display: inline-flex;
@@ -223,6 +230,8 @@ input[type="color"] {
 .primary-button:active,
 .ghost-button:active,
 .icon-button:active,
+.danger-button:active,
+.link-button:active,
 .sidebar-nav button:active,
 .sidebar-toggle:active,
 .mobile-tabbar button:active,
@@ -236,7 +245,8 @@ input[type="color"] {
 }
 
 .ghost-button,
-.icon-button {
+.icon-button,
+.link-button {
   background: var(--surface-soft);
   border: 1px solid var(--border);
   color: var(--text);
@@ -245,6 +255,7 @@ input[type="color"] {
 
 .ghost-button:hover,
 .icon-button:hover,
+.link-button:hover,
 .sidebar-nav button:hover,
 .sidebar-toggle:hover,
 .mobile-tabbar button:hover,
@@ -260,6 +271,24 @@ input[type="color"] {
   padding: 8px;
 }
 
+.danger-button {
+  background: rgba(239, 107, 122, 0.16);
+  border: 1px solid rgba(239, 107, 122, 0.44);
+  color: #ffc3ca;
+  font-weight: 800;
+  padding: 10px 16px;
+}
+
+.danger-button:hover {
+  background: rgba(239, 107, 122, 0.22);
+  transform: translateY(-1px);
+}
+
+.link-button {
+  background: transparent;
+  justify-self: center;
+}
+
 .notice,
 .form-message {
   animation: notice-in 0.28s var(--ease) both;
@@ -269,6 +298,27 @@ input[type="color"] {
   color: #ffe3a3;
   margin: 14px 0;
   padding: 12px;
+}
+
+.notice.success,
+.form-message.success {
+  background: rgba(85, 194, 124, 0.12);
+  border-color: rgba(85, 194, 124, 0.34);
+  color: #a9e7bd;
+}
+
+.notice.error,
+.form-message.error {
+  background: rgba(239, 107, 122, 0.12);
+  border-color: rgba(239, 107, 122, 0.34);
+  color: #ffc3ca;
+}
+
+.notice.info,
+.form-message.info {
+  background: rgba(106, 168, 255, 0.12);
+  border-color: rgba(106, 168, 255, 0.34);
+  color: #c7ddff;
 }
 
 .app-layout {
@@ -868,6 +918,18 @@ input[type="color"] {
 .modal-form {
   display: grid;
   gap: 12px;
+}
+
+.confirm-message {
+  color: var(--muted-strong);
+  margin: 0 0 18px;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
 }
 
 .checkbox-row {
