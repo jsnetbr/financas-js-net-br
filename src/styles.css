@@ -984,6 +984,43 @@ input[type="color"] {
   margin: 0;
 }
 
+.card-grid--expenses {
+  display: grid;
+  gap: 12px;
+  grid-auto-columns: minmax(180px, 1fr);
+  grid-auto-flow: column;
+  overflow-x: hidden;
+}
+
+.card-grid--expenses .data-card {
+  min-height: 152px;
+  padding: 12px;
+}
+
+.card-grid--expenses .data-card h3 {
+  font-size: 0.94rem;
+}
+
+.card-grid--expenses .data-card p,
+.card-grid--expenses .card-row span {
+  font-size: 0.86rem;
+}
+
+.card-grid--expenses .card-row strong {
+  font-size: 0.95rem;
+}
+
+.card-grid--expenses .card-actions .ghost-button,
+.card-grid--expenses .card-actions .icon-button {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.card-grid--expenses .card-actions .icon-button {
+  min-width: 34px;
+  padding: 6px;
+}
+
 .card-row {
   align-items: center;
   display: flex;
@@ -1741,6 +1778,18 @@ input[type="color"] {
 
   .ranking-row b {
     grid-column: 2;
+  }
+
+  .card-grid--expenses {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .card-grid--expenses .data-card {
+    flex: 0 0 280px;
   }
 }
 

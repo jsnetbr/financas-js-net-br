@@ -1117,6 +1117,7 @@ export function FinanceDashboard() {
               togglePaid={toggleTransactionPaid}
               emptyMessage="Nenhuma saida neste mes."
               isBusy={isBusy}
+              variant="expenses"
             />
           </section>
         </section>
