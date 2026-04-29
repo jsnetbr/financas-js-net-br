@@ -12,7 +12,12 @@ export function DashboardModal({
   const modalRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
   const titleId = useId();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     previousActiveElementRef.current = document.activeElement as HTMLElement | null;
@@ -32,13 +37,16 @@ export function DashboardModal({
     };
 
     const focusableElements = getFocusableElements();
-    const firstInteractiveElement = focusableElements[0] ?? closeButtonRef.current;
-    firstInteractiveElement?.focus();
+    const firstFormElement =
+      focusableElements.find((element) => element.matches("input, select, textarea")) ??
+      focusableElements[0] ??
+      closeButtonRef.current;
+    firstFormElement?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -79,14 +87,20 @@ export function DashboardModal({
       document.body.classList.remove("modal-open");
       previousActiveElementRef.current?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div ref={modalRef} className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby={titleId}>
       <section className="modal-card">
         <div className="panel-header">
           <h2 id={titleId}>{title}</h2>
-          <button ref={closeButtonRef} className="ghost-button" onClick={onClose}>
+          <button
+            ref={closeButtonRef}
+            className="ghost-button"
+            onClick={onClose}
+            type="button"
+            aria-label="Fechar janela"
+          >
             Fechar
           </button>
         </div>

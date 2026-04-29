@@ -262,7 +262,10 @@ export function FinanceDashboard() {
     }
     if (recurringSortKey === "amount") result = a.amount_cents - b.amount_cents;
     if (recurringSortKey === "status") {
-      const statusFor = (item: RecurringTransaction) => (item.is_active ? "ativa" : "pausada");
+      const statusFor = (item: RecurringTransaction) => {
+        if (recurringAlreadyGenerated(item)) return "gerada neste mes";
+        return item.is_active ? "ativa" : "pausada";
+      };
       result = statusFor(a).localeCompare(statusFor(b), "pt-BR");
     }
     return result * direction;
