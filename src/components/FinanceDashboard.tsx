@@ -89,6 +89,10 @@ type DashboardTab =
   | "configuracoes";
 
 type NoticeTone = "info" | "success" | "error";
+type SortDirection = "asc" | "desc";
+type RecurringSortKey = "day" | "type" | "description" | "category" | "amount" | "status";
+type CategorySortKey = "type" | "name";
+type LimitSortKey = "category" | "spent" | "limit" | "usage" | "status";
 
 type PendingAction =
   | "refresh"
@@ -204,6 +208,7 @@ export function FinanceDashboard() {
   });
   const [categoryName, setCategoryName] = useState("");
   const [limitForm, setLimitForm] = useState({ category_id: "", amount: "" });
+  const [editingLimitCategoryId, setEditingLimitCategoryId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -221,6 +226,12 @@ export function FinanceDashboard() {
     useState<(CategoryForm & { id: string; type: EntryType }) | null>(null);
   const [editingRecurring, setEditingRecurring] =
     useState<(RecurringForm & { id: string; is_active: boolean }) | null>(null);
+  const [recurringSortKey, setRecurringSortKey] = useState<RecurringSortKey>("day");
+  const [recurringSortDirection, setRecurringSortDirection] = useState<SortDirection>("asc");
+  const [categorySortKey, setCategorySortKey] = useState<CategorySortKey>("name");
+  const [categorySortDirection, setCategorySortDirection] = useState<SortDirection>("asc");
+  const [limitSortKey, setLimitSortKey] = useState<LimitSortKey>("category");
+  const [limitSortDirection, setLimitSortDirection] = useState<SortDirection>("asc");
 
   const summary = useMemo(() => calculateSummary(transactions, recurring), [transactions, recurring]);
   const categoriesByType = categories.filter((item) => item.type === transactionForm.type);
@@ -239,6 +250,44 @@ export function FinanceDashboard() {
       spent,
       percent: limit ? Math.min(100, Math.round((spent / limit.amount_cents) * 100)) : 0,
     };
+  });
+  const sortedRecurring = [...recurring].sort((a, b) => {
+    const direction = recurringSortDirection === "asc" ? 1 : -1;
+    let result = 0;
+    if (recurringSortKey === "day") result = a.day_of_month - b.day_of_month;
+    if (recurringSortKey === "type") result = a.type.localeCompare(b.type, "pt-BR");
+    if (recurringSortKey === "description") result = a.description.localeCompare(b.description, "pt-BR");
+    if (recurringSortKey === "category") {
+      result = categoryNameFor(a.category_id).localeCompare(categoryNameFor(b.category_id), "pt-BR");
+    }
+    if (recurringSortKey === "amount") result = a.amount_cents - b.amount_cents;
+    if (recurringSortKey === "status") {
+      const statusFor = (item: RecurringTransaction) => (item.is_active ? "ativa" : "pausada");
+      result = statusFor(a).localeCompare(statusFor(b), "pt-BR");
+    }
+    return result * direction;
+  });
+  const sortedVisibleCategories = [...visibleCategories].sort((a, b) => {
+    const direction = categorySortDirection === "asc" ? 1 : -1;
+    const result =
+      categorySortKey === "type"
+        ? a.type.localeCompare(b.type, "pt-BR")
+        : a.name.localeCompare(b.name, "pt-BR");
+    return result * direction;
+  });
+  const sortedLimitRows = [...limitRows].sort((a, b) => {
+    const direction = limitSortDirection === "asc" ? 1 : -1;
+    let result = 0;
+    if (limitSortKey === "category") result = a.category.name.localeCompare(b.category.name, "pt-BR");
+    if (limitSortKey === "spent") result = a.spent - b.spent;
+    if (limitSortKey === "limit") result = (a.limit?.amount_cents ?? 0) - (b.limit?.amount_cents ?? 0);
+    if (limitSortKey === "usage") result = a.percent - b.percent;
+    if (limitSortKey === "status") {
+      const statusFor = (row: (typeof limitRows)[number]) =>
+        !row.limit ? "sem limite" : row.spent > row.limit.amount_cents ? "passou" : "ok";
+      result = statusFor(a).localeCompare(statusFor(b), "pt-BR");
+    }
+    return result * direction;
   });
   const reportExpenseRows = expenseCategories
     .map((category) => {
@@ -268,6 +317,45 @@ export function FinanceDashboard() {
   function setMessage(text: string, tone?: NoticeTone) {
     setRawMessage(text);
     setMessageTone(text ? tone ?? inferNoticeTone(text) : "info");
+  }
+
+  function sortIndicator(active: boolean, direction: SortDirection) {
+    return active ? (direction === "asc" ? "↑" : "↓") : "↕";
+  }
+
+  function toggleRecurringSort(key: RecurringSortKey) {
+    if (recurringSortKey === key) {
+      setRecurringSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setRecurringSortKey(key);
+    setRecurringSortDirection("asc");
+  }
+
+  function toggleCategorySort(key: CategorySortKey) {
+    if (categorySortKey === key) {
+      setCategorySortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setCategorySortKey(key);
+    setCategorySortDirection("asc");
+  }
+
+  function toggleLimitSort(key: LimitSortKey) {
+    if (limitSortKey === key) {
+      setLimitSortDirection((current) => (current === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setLimitSortKey(key);
+    setLimitSortDirection("asc");
+  }
+
+  function beginEditLimit(categoryId: string, currentLimit?: CategoryLimit) {
+    setEditingLimitCategoryId(categoryId);
+    setLimitForm({
+      category_id: categoryId,
+      amount: currentLimit ? centsToInput(currentLimit.amount_cents) : "",
+    });
   }
 
   useEffect(() => {
@@ -554,6 +642,7 @@ export function FinanceDashboard() {
       }
       setMessage("Limite salvo.");
       setLimitForm({ category_id: "", amount: "" });
+      setEditingLimitCategoryId(null);
     } catch {
       setMessage("Nao foi possivel salvar o limite.");
     } finally {
@@ -1117,7 +1206,6 @@ export function FinanceDashboard() {
               togglePaid={toggleTransactionPaid}
               emptyMessage="Nenhuma saida neste mes."
               isBusy={isBusy}
-              variant="expenses"
             />
           </section>
         </section>
@@ -1136,55 +1224,70 @@ export function FinanceDashboard() {
             </button>
           </div>
 
-          <form className="entry-form card-form" onSubmit={addTransaction}>
-            <select
-              value={transactionForm.type}
-              onChange={(event) =>
-                setTransactionForm((current) => ({
-                  ...current,
-                  type: event.target.value as EntryType,
-                  category_id: "",
-                }))
-              }
-            >
-              <option value="saida">Saida</option>
-              <option value="entrada">Entrada</option>
-            </select>
-            <input
-              placeholder="Descricao"
-              value={transactionForm.description}
-              onChange={(event) =>
-                setTransactionForm((current) => ({ ...current, description: event.target.value }))
-              }
-            />
-            <input
-              placeholder="Valor"
-              inputMode="decimal"
-              value={transactionForm.amount}
-              onChange={(event) =>
-                setTransactionForm((current) => ({ ...current, amount: event.target.value }))
-              }
-            />
-            <input
-              type="date"
-              value={transactionForm.entry_date}
-              onChange={(event) =>
-                setTransactionForm((current) => ({ ...current, entry_date: event.target.value }))
-              }
-            />
-            <select
-              value={transactionForm.category_id}
-              onChange={(event) =>
-                setTransactionForm((current) => ({ ...current, category_id: event.target.value }))
-              }
-            >
-              <option value="">Categoria</option>
-              {categoriesByType.map((item) => (
-                <option value={item.id} key={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
+          <form className="entry-form quick-entry-form" onSubmit={addTransaction}>
+            <label>
+              Tipo
+              <select
+                value={transactionForm.type}
+                onChange={(event) =>
+                  setTransactionForm((current) => ({
+                    ...current,
+                    type: event.target.value as EntryType,
+                    category_id: "",
+                  }))
+                }
+              >
+                <option value="saida">Saida</option>
+                <option value="entrada">Entrada</option>
+              </select>
+            </label>
+            <label className="quick-entry-form__description">
+              Descricao
+              <input
+                placeholder="Ex: mercado, salario, seguro"
+                value={transactionForm.description}
+                onChange={(event) =>
+                  setTransactionForm((current) => ({ ...current, description: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Valor
+              <input
+                placeholder="0,00"
+                inputMode="decimal"
+                value={transactionForm.amount}
+                onChange={(event) =>
+                  setTransactionForm((current) => ({ ...current, amount: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Data
+              <input
+                type="date"
+                value={transactionForm.entry_date}
+                onChange={(event) =>
+                  setTransactionForm((current) => ({ ...current, entry_date: event.target.value }))
+                }
+              />
+            </label>
+            <label>
+              Categoria
+              <select
+                value={transactionForm.category_id}
+                onChange={(event) =>
+                  setTransactionForm((current) => ({ ...current, category_id: event.target.value }))
+                }
+              >
+                <option value="">Sem categoria</option>
+                {categoriesByType.map((item) => (
+                  <option value={item.id} key={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button className="primary-button" disabled={isBusy}>
               <Plus size={16} />
               {pendingAction === "transaction" ? "Salvando..." : "Salvar"}
@@ -1268,62 +1371,120 @@ export function FinanceDashboard() {
             </button>
           </form>
 
-          <div className="card-grid">
+          <div className="excel-table-wrap">
             {recurring.length === 0 ? (
               <p className="empty-state">Nenhuma recorrencia cadastrada.</p>
             ) : (
-              recurring.map((item) => {
-                const generated = recurringAlreadyGenerated(item);
-                return (
-                  <article className={`data-card ${item.type}`} key={item.id}>
-                    <div className="card-row">
-                      <span className="type-pill">{item.type === "entrada" ? "Entrada" : "Saida"}</span>
-                      <strong>{formatMoney(item.amount_cents)}</strong>
-                    </div>
-                    <h3>{item.description}</h3>
-                    <p>
-                      Dia {item.day_of_month} - {categoryNameFor(item.category_id)}
-                    </p>
-                    <span className={generated ? "status-pill success" : "status-pill"}>
-                      {generated ? "Gerada neste mes" : item.is_active ? "Ativa" : "Pausada"}
-                    </span>
-                    <div className="card-actions">
-                      <button
-                        className="ghost-button"
-                        onClick={() => createFromRecurring(item)}
-                        disabled={generated || isBusy}
-                      >
-                        <Plus size={16} />
-                        Gerar
+              <table className="excel-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleRecurringSort("day")} type="button">
+                        Dia
+                        <span>{sortIndicator(recurringSortKey === "day", recurringSortDirection)}</span>
                       </button>
-                      <button
-                        className="icon-button"
-                        onClick={() => beginEditRecurring(item)}
-                        title="Editar"
-                        disabled={isBusy}
-                      >
-                        <Pencil size={16} />
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleRecurringSort("type")} type="button">
+                        Tipo
+                        <span>{sortIndicator(recurringSortKey === "type", recurringSortDirection)}</span>
                       </button>
+                    </th>
+                    <th>
                       <button
-                        className="icon-button"
-                        onClick={() => toggleRecurring(item)}
-                        title={item.is_active ? "Pausar" : "Ativar"}
-                        disabled={isBusy}
+                        className="table-sort-button"
+                        onClick={() => toggleRecurringSort("description")}
+                        type="button"
                       >
-                        {item.is_active ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
+                        Descricao
+                        <span>{sortIndicator(recurringSortKey === "description", recurringSortDirection)}</span>
                       </button>
+                    </th>
+                    <th>
                       <button
-                        className="icon-button"
-                        onClick={() => deleteRecurring(item.id)}
-                        title="Apagar"
-                        disabled={isBusy}
+                        className="table-sort-button"
+                        onClick={() => toggleRecurringSort("category")}
+                        type="button"
                       >
-                        <Trash2 size={16} />
+                        Categoria
+                        <span>{sortIndicator(recurringSortKey === "category", recurringSortDirection)}</span>
                       </button>
-                    </div>
-                  </article>
-                );
-              })
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleRecurringSort("amount")} type="button">
+                        Valor
+                        <span>{sortIndicator(recurringSortKey === "amount", recurringSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleRecurringSort("status")} type="button">
+                        Status
+                        <span>{sortIndicator(recurringSortKey === "status", recurringSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedRecurring.map((item) => {
+                    const generated = recurringAlreadyGenerated(item);
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.day_of_month}</td>
+                        <td>
+                          <span className="type-pill">{item.type === "entrada" ? "Entrada" : "Saida"}</span>
+                        </td>
+                        <td className="excel-table__description">{item.description}</td>
+                        <td>{categoryNameFor(item.category_id)}</td>
+                        <td className={item.type === "entrada" ? "money-income" : "money-expense"}>
+                          {formatMoney(item.amount_cents)}
+                        </td>
+                        <td>
+                          <span className={generated ? "status-pill success" : item.is_active ? "status-pill success" : "status-pill pending"}>
+                            {generated ? "Gerada neste mes" : item.is_active ? "Ativa" : "Pausada"}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="table-actions">
+                            <button
+                              className="icon-button"
+                              onClick={() => createFromRecurring(item)}
+                              title="Gerar"
+                              disabled={generated || isBusy}
+                            >
+                              <Plus size={16} />
+                            </button>
+                            <button
+                              className="icon-button"
+                              onClick={() => beginEditRecurring(item)}
+                              title="Editar"
+                              disabled={isBusy}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            <button
+                              className="icon-button"
+                              onClick={() => toggleRecurring(item)}
+                              title={item.is_active ? "Pausar" : "Ativar"}
+                              disabled={isBusy}
+                            >
+                              {item.is_active ? <PauseCircle size={16} /> : <PlayCircle size={16} />}
+                            </button>
+                            <button
+                              className="icon-button"
+                              onClick={() => deleteRecurring(item.id)}
+                              title="Apagar"
+                              disabled={isBusy}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </section>
@@ -1365,41 +1526,66 @@ export function FinanceDashboard() {
             </button>
           </form>
 
-          <div className="category-grid">
+          <div className="excel-table-wrap">
             {visibleCategories.length === 0 ? (
               <p className="empty-state">Nenhuma categoria neste grupo.</p>
             ) : (
-              visibleCategories.map((item) => (
-                <article className="category-card" key={item.id} style={{ borderTopColor: item.color }}>
-                  <span>{item.type === "entrada" ? "Entrada" : "Saida"}</span>
-                  <strong>{item.name}</strong>
-                  <div className="card-actions">
-                    <button
-                      className="icon-button"
-                      onClick={() =>
-                        setEditingCategory({
-                          id: item.id,
-                          type: item.type,
-                          name: item.name,
-                          color: item.color,
-                        })
-                      }
-                      title="Editar"
-                      disabled={isBusy}
-                    >
-                      <Pencil size={16} />
-                    </button>
-                    <button
-                      className="icon-button"
-                      onClick={() => deleteCategory(item.id)}
-                      title="Apagar"
-                      disabled={isBusy}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </article>
-              ))
+              <table className="excel-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleCategorySort("type")} type="button">
+                        Tipo
+                        <span>{sortIndicator(categorySortKey === "type", categorySortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleCategorySort("name")} type="button">
+                        Categoria
+                        <span>{sortIndicator(categorySortKey === "name", categorySortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedVisibleCategories.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <span className="type-pill">{item.type === "entrada" ? "Entrada" : "Saida"}</span>
+                      </td>
+                      <td className="excel-table__description">{item.name}</td>
+                      <td>
+                        <div className="table-actions">
+                          <button
+                            className="icon-button"
+                            onClick={() =>
+                              setEditingCategory({
+                                id: item.id,
+                                type: item.type,
+                                name: item.name,
+                                color: item.color,
+                              })
+                            }
+                            title="Editar"
+                            disabled={isBusy}
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            className="icon-button"
+                            onClick={() => deleteCategory(item.id)}
+                            title="Apagar"
+                            disabled={isBusy}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </section>
@@ -1414,80 +1600,95 @@ export function FinanceDashboard() {
             </div>
           </div>
 
-          <form className="limit-form card-form" onSubmit={saveCategoryLimit}>
-            <select
-              value={limitForm.category_id}
-              onChange={(event) => {
-                const categoryId = event.target.value;
-                const currentLimit = categoryLimits.find((item) => item.category_id === categoryId);
-                setLimitForm({
-                  category_id: categoryId,
-                  amount: currentLimit ? centsToInput(currentLimit.amount_cents) : "",
-                });
-              }}
-            >
-              <option value="">Categoria de saida</option>
-              {expenseCategories.map((item) => (
-                <option value={item.id} key={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="Limite mensal"
-              inputMode="decimal"
-              value={limitForm.amount}
-              onChange={(event) => setLimitForm((current) => ({ ...current, amount: event.target.value }))}
-            />
-            <button className="primary-button" disabled={isBusy}>
-              {pendingAction === "limit" ? "Salvando..." : "Salvar limite"}
-            </button>
-          </form>
-
-          <div className="limit-grid">
+          <div className="excel-table-wrap">
             {limitRows.length === 0 ? (
               <p className="empty-state">Crie categorias de saida para definir limites.</p>
             ) : (
-              limitRows.map(({ category, limit, spent, percent }) => {
-                const exceeded = Boolean(limit && spent > limit.amount_cents);
-                return (
-                  <article className="limit-card" key={category.id}>
-                    <div className="card-row">
-                      <div>
-                        <span className="type-pill">Saida</span>
-                        <h3>{category.name}</h3>
-                      </div>
-                      {limit && (
-                        <button
-                          className="icon-button"
-                          onClick={() => deleteCategoryLimit(limit.id)}
-                          title="Remover limite"
-                          disabled={isBusy}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      )}
-                    </div>
-                    <div className="limit-values">
-                      <span>Gasto: {formatMoney(spent)}</span>
-                      <strong>{limit ? `Limite: ${formatMoney(limit.amount_cents)}` : "Sem limite"}</strong>
-                    </div>
-                    <div className="limit-meter" aria-label={`Uso do limite de ${category.name}`}>
-                      <span
-                        className={exceeded ? "exceeded" : ""}
-                        style={{ width: limit ? `${percent}%` : "0%" }}
-                      />
-                    </div>
-                    <p className={exceeded ? "limit-alert danger" : "limit-alert"}>
-                      {limit
-                        ? exceeded
-                          ? `Passou ${formatMoney(spent - limit.amount_cents)} do limite.`
-                          : `Ainda resta ${formatMoney(limit.amount_cents - spent)}.`
-                        : "Defina um valor para acompanhar essa categoria."}
-                    </p>
-                  </article>
-                );
-              })
+              <table className="excel-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleLimitSort("category")} type="button">
+                        Categoria
+                        <span>{sortIndicator(limitSortKey === "category", limitSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleLimitSort("spent")} type="button">
+                        Gasto
+                        <span>{sortIndicator(limitSortKey === "spent", limitSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleLimitSort("limit")} type="button">
+                        Limite
+                        <span>{sortIndicator(limitSortKey === "limit", limitSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleLimitSort("usage")} type="button">
+                        Uso
+                        <span>{sortIndicator(limitSortKey === "usage", limitSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>
+                      <button className="table-sort-button" onClick={() => toggleLimitSort("status")} type="button">
+                        Status
+                        <span>{sortIndicator(limitSortKey === "status", limitSortDirection)}</span>
+                      </button>
+                    </th>
+                    <th>Acoes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedLimitRows.map(({ category, limit, spent, percent }) => {
+                    const exceeded = Boolean(limit && spent > limit.amount_cents);
+                    return (
+                      <tr key={category.id}>
+                        <td className="excel-table__description">{category.name}</td>
+                        <td>{formatMoney(spent)}</td>
+                        <td>{limit ? formatMoney(limit.amount_cents) : "Sem limite"}</td>
+                        <td>
+                          <div className="table-meter" aria-label={`Uso do limite de ${category.name}`}>
+                            <span className={exceeded ? "exceeded" : ""} style={{ width: limit ? `${percent}%` : "0%" }} />
+                          </div>
+                        </td>
+                        <td>
+                          <span className={exceeded ? "status-pill pending" : "status-pill success"}>
+                            {limit
+                              ? exceeded
+                                ? `Passou ${formatMoney(spent - limit.amount_cents)}`
+                                : `Resta ${formatMoney(limit.amount_cents - spent)}`
+                              : "Sem limite"}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="table-actions">
+                            <button
+                              className="icon-button"
+                              onClick={() => beginEditLimit(category.id, limit)}
+                              title="Editar limite"
+                              disabled={isBusy}
+                            >
+                              <Pencil size={16} />
+                            </button>
+                            {limit && (
+                              <button
+                                className="icon-button"
+                                onClick={() => deleteCategoryLimit(limit.id)}
+                                title="Remover limite"
+                                disabled={isBusy}
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </section>
@@ -1882,6 +2083,34 @@ export function FinanceDashboard() {
             </label>
             <button className="primary-button" disabled={isBusy}>
               {pendingAction === "recurring" ? "Salvando..." : "Salvar recorrencia"}
+            </button>
+          </form>
+        </DashboardModal>
+      )}
+      {editingLimitCategoryId && (
+        <DashboardModal
+          title="Editar limite"
+          onClose={() => {
+            setEditingLimitCategoryId(null);
+            setLimitForm({ category_id: "", amount: "" });
+          }}
+        >
+          <form className="modal-form" onSubmit={saveCategoryLimit}>
+            <label>
+              Categoria
+              <input value={categoryNameFor(editingLimitCategoryId)} disabled />
+            </label>
+            <label>
+              Limite mensal
+              <input
+                placeholder="0,00"
+                inputMode="decimal"
+                value={limitForm.amount}
+                onChange={(event) => setLimitForm((current) => ({ ...current, amount: event.target.value }))}
+              />
+            </label>
+            <button className="primary-button" disabled={isBusy}>
+              {pendingAction === "limit" ? "Salvando..." : "Salvar limite"}
             </button>
           </form>
         </DashboardModal>

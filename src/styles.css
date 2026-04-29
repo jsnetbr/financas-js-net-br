@@ -828,6 +828,27 @@ input[type="color"] {
   padding: 12px;
 }
 
+.quick-entry-form {
+  align-items: end;
+  background:
+    linear-gradient(180deg, rgba(18, 32, 50, 0.98), rgba(12, 22, 34, 0.98));
+  grid-template-columns: 118px minmax(220px, 1fr) 132px 146px 180px auto;
+  margin-bottom: 14px;
+}
+
+.quick-entry-form label {
+  min-width: 0;
+}
+
+.quick-entry-form__description {
+  min-width: 220px;
+}
+
+.quick-entry-form .primary-button {
+  min-height: 44px;
+  padding-inline: 18px;
+}
+
 .recurring-form {
   animation: panel-rise 0.38s var(--ease-soft) both;
   background: #0d1520;
@@ -1019,6 +1040,116 @@ input[type="color"] {
 .card-grid--expenses .card-actions .icon-button {
   min-width: 34px;
   padding: 6px;
+}
+
+.excel-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-top: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.excel-table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+
+.excel-table th,
+.excel-table td {
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.excel-table th {
+  background: rgba(21, 33, 50, 0.98);
+  color: var(--muted-strong);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  position: sticky;
+  text-transform: uppercase;
+  top: 0;
+  z-index: 1;
+}
+
+.excel-table td {
+  background: rgba(13, 21, 32, 0.92);
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.excel-table tbody tr:nth-child(even) td {
+  background: rgba(17, 26, 39, 0.96);
+}
+
+.excel-table tbody tr:hover td {
+  background: rgba(26, 44, 68, 0.98);
+}
+
+.excel-table__description {
+  font-weight: 800;
+  min-width: 220px;
+  white-space: normal;
+}
+
+.table-sort-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 8px;
+  justify-content: space-between;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+  text-transform: inherit;
+  width: 100%;
+}
+
+.table-sort-button span {
+  color: var(--blue);
+  font-size: 0.95rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.table-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.table-actions .icon-button {
+  min-height: 34px;
+  min-width: 34px;
+  padding: 6px;
+}
+
+.table-meter {
+  background: #0d1520;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  height: 12px;
+  min-width: 140px;
+  overflow: hidden;
+}
+
+.table-meter span {
+  background: var(--green);
+  display: block;
+  height: 100%;
+}
+
+.table-meter span.exceeded {
+  background: var(--red);
 }
 
 .card-row {
@@ -1601,6 +1732,7 @@ input[type="color"] {
   .recurring-form {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
 }
 
 @media (max-width: 680px) {
