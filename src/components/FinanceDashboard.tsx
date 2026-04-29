@@ -193,6 +193,7 @@ export function FinanceDashboard() {
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialog | null>(null);
   const [supportsDisplayName, setSupportsDisplayName] = useState(true);
+  const [mobileInputFocused, setMobileInputFocused] = useState(false);
   const [transactionForm, setTransactionForm] = useState<TransactionForm>({
     type: "saida",
     description: "",
@@ -279,6 +280,35 @@ export function FinanceDashboard() {
     const timer = window.setTimeout(() => setRawMessage(""), 6500);
     return () => window.clearTimeout(timer);
   }, [message]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 680px)");
+    const isFormField = (target: EventTarget | null) =>
+      target instanceof HTMLElement && Boolean(target.closest("input, select, textarea"));
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (query.matches && isFormField(event.target)) setMobileInputFocused(true);
+    };
+    const handleFocusOut = () => {
+      requestAnimationFrame(() => {
+        if (!query.matches) return setMobileInputFocused(false);
+        setMobileInputFocused(isFormField(document.activeElement));
+      });
+    };
+    const handleQueryChange = () => {
+      if (!query.matches) setMobileInputFocused(false);
+    };
+
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    query.addEventListener("change", handleQueryChange);
+    return () => {
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      query.removeEventListener("change", handleQueryChange);
+    };
+  }, []);
 
   async function loadData(showRefreshMessage = false) {
     if (!supabase || !user) return;
@@ -990,7 +1020,11 @@ export function FinanceDashboard() {
   });
 
   return (
-    <main className={sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"}>
+    <main
+      className={`${sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"} ${
+        mobileInputFocused ? "mobile-input-focused" : ""
+      }`}
+    >
       <aside className="sidebar" aria-label="Navegacao principal">
         <div className="sidebar-brand">
           <div className="sidebar-mark">
@@ -1051,7 +1085,7 @@ export function FinanceDashboard() {
 
       {message && <div className={`notice ${messageTone}`}>{message}</div>}
 
-      <nav className="mobile-tabbar" aria-label="Areas do app">
+      <nav className={`mobile-tabbar ${mobileInputFocused ? "is-collapsed" : ""}`} aria-label="Areas do app">
         {navigation}
       </nav>
 
