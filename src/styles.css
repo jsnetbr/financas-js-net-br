@@ -21,6 +21,7 @@
   --shadow: 0 18px 42px rgba(2, 6, 12, 0.3);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --mobile-tabbar-offset: 0px;
 }
 
 * {
@@ -1567,7 +1568,15 @@ input[type="color"] {
 
 @media (max-width: 680px) {
   body {
-    padding-bottom: calc(104px + env(safe-area-inset-bottom));
+    padding-bottom: var(--mobile-tabbar-offset);
+  }
+
+  .app-layout {
+    --mobile-tabbar-offset: calc(104px + env(safe-area-inset-bottom));
+  }
+
+  .app-layout.mobile-input-focused {
+    --mobile-tabbar-offset: calc(20px + env(safe-area-inset-bottom));
   }
 
   .app-layout,
@@ -1577,7 +1586,15 @@ input[type="color"] {
   }
 
   .app-shell {
-    padding: 0;
+    padding: 0 0 calc(var(--mobile-tabbar-offset) + 12px);
+  }
+
+  .tab-panel {
+    padding-bottom: calc(var(--mobile-tabbar-offset) + 12px);
+  }
+
+  .tab-panel.panel {
+    padding-bottom: calc(var(--mobile-tabbar-offset) + 24px);
   }
 
   .sidebar {
@@ -1666,7 +1683,13 @@ input[type="color"] {
     scroll-padding-inline: 12px;
     scroll-snap-type: x mandatory;
     scrollbar-width: none;
+    transition: transform 0.24s var(--ease), opacity 0.24s var(--ease);
     z-index: 15;
+  }
+
+  .mobile-tabbar.is-collapsed {
+    opacity: 0.2;
+    transform: translateY(calc(100% - 28px - env(safe-area-inset-bottom)));
   }
 
   .mobile-tabbar::-webkit-scrollbar {
