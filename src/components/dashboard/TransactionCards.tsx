@@ -11,6 +11,7 @@ export function TransactionCards({
   togglePaid,
   emptyMessage = "Nenhum lancamento neste mes.",
   isBusy,
+  variant,
 }: {
   transactions: Transaction[];
   loading: boolean;
@@ -20,6 +21,7 @@ export function TransactionCards({
   togglePaid: (item: Transaction) => Promise<void>;
   emptyMessage?: string;
   isBusy: boolean;
+  variant?: "default" | "expenses";
 }) {
   if (loading) {
     return <LoadingLogo compact label="Carregando dados..." />;
@@ -30,7 +32,7 @@ export function TransactionCards({
   }
 
   return (
-    <div className="card-grid">
+    <div className={`card-grid${variant === "expenses" ? " card-grid--expenses" : ""}`}>
       {transactions.map((item) => (
         <article className={`data-card ${item.type}`} key={item.id}>
           <div className="card-row">
