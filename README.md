@@ -1,79 +1,56 @@
-# Financas pessoais
+# Controle financeiro pessoal
 
-App pessoal de controle financeiro com React, Vite, TypeScript e Supabase.
+Aplicativo web para controle de financas pessoais, com login, lancamentos, recorrencias, limites por categoria, relatorios e instalacao como PWA.
 
-## Banco usado pelo projeto
+## Recursos
 
-Este app usa somente este projeto Supabase:
+- Login por email e senha
+- Recuperacao de senha
+- Resumo mensal de entradas, saidas e saldo
+- Lancamentos com criacao, edicao e exclusao
+- Status de saida como paga ou pendente
+- Categorias separadas por entrada e saida
+- Recorrencias mensais
+- Limites por categoria
+- Relatorios do mes
+- Configuracoes de conta
+- PWA instalavel no celular
 
-- Projeto: `uaffbuylvighmgibzqhn`
-- URL: `https://uaffbuylvighmgibzqhn.supabase.co`
+## Tecnologias
 
-Hoje nao existe outro backend no repo. O "backend" do app e o proprio Supabase com:
+- React
+- Vite
+- TypeScript
+- Supabase
 
-- Auth por email e senha
-- tabelas em `public`
-- RLS para separar os dados por usuario
+## Configuracao local
 
-No front, a unica biblioteca de banco/autenticacao usada e `@supabase/supabase-js`.
-
-## Estrutura importante
-
-- `src/lib/supabase.ts`: conexao do front com o Supabase
-- `supabase-schema.sql`: SQL idempotente para alinhar o banco real
-- `supabase/migrations/`: migracoes locais do Supabase CLI
-- `supabase/config.toml`: configuracao local do projeto Supabase
-
-## Configuracao rapida
-
-1. Copie `.env.example` para `.env`
-2. Preencha:
+Crie um arquivo `.env` com as variaveis do seu ambiente:
 
 ```env
-VITE_SUPABASE_URL=https://uaffbuylvighmgibzqhn.supabase.co
-VITE_SUPABASE_ANON_KEY=sua_chave_anon_public
+VITE_SUPABASE_URL=sua_url_do_supabase
+VITE_SUPABASE_ANON_KEY=sua_chave_publica_anon
 ```
 
-3. Instale e rode:
+Depois instale e rode o app:
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Como alinhar o banco real
+## Banco de dados
 
-Se o projeto Supabase ja existe e voce quer deixar tudo certo:
+O arquivo `supabase-schema.sql` contem a estrutura esperada do banco.
 
-1. Abra o **SQL Editor** no Supabase
-2. Rode o arquivo `supabase-schema.sql`
-3. Se houver categorias repetidas com o mesmo nome no mesmo grupo, renomeie ou apague antes de aplicar a regra nova de categoria unica
+Antes de publicar ou testar em producao:
 
-Esse SQL ja inclui:
+1. Abra o editor SQL do Supabase.
+2. Rode o conteudo de `supabase-schema.sql`.
+3. Confirme que as politicas de seguranca estao ativas.
+4. Teste login, lancamentos, recorrencias, limites e relatorios.
 
-- `transactions.is_paid`
-- `transactions.source_recurring_id`
-- `transactions.source_month`
-- `profiles.display_name`
-- indice unico para evitar duplicacao de recorrencia no mesmo mes
-- regra para impedir categoria duplicada por usuario e tipo
-
-## Supabase CLI no repo
-
-Este repo ja foi preparado para usar o Supabase CLI localmente.
-
-Quando for conectar sua maquina ao projeto real, use:
-
-```bash
-npx supabase@latest login
-npx supabase@latest link --project-ref uaffbuylvighmgibzqhn
-```
-
-Importante:
-
-- sem `supabase login` ou `SUPABASE_ACCESS_TOKEN`, o comando `link` nao termina
-- as migracoes oficiais ficam em `supabase/migrations/`
-- o arquivo `supabase/config.toml` ja esta ajustado para o projeto e para o app local em `http://127.0.0.1:3003`
+As migracoes ficam em `supabase/migrations/` para manutencao futura.
 
 ## Scripts
 
@@ -84,45 +61,41 @@ npm run test
 npm run preview
 ```
 
-## O que o app ja faz
+## Deploy
 
-- login por email e senha
-- recuperacao de senha
-- resumo mensal
-- lancamentos com criar, editar e apagar
-- marcar saida como paga ou pendente
-- categorias por entrada e saida
-- recorrencias com bloqueio de duplicacao no mesmo mes
-- limites por categoria
-- relatorios do mes
-- configuracoes de conta
-- PWA instalavel
-
-## Cloudflare Pages
-
-Configure estas variaveis no deploy:
+Configure as variaveis de ambiente na plataforma de hospedagem:
 
 ```env
-VITE_SUPABASE_URL=https://uaffbuylvighmgibzqhn.supabase.co
-VITE_SUPABASE_ANON_KEY=sua_chave_anon_public
+VITE_SUPABASE_URL=sua_url_do_supabase
+VITE_SUPABASE_ANON_KEY=sua_chave_publica_anon
 ```
 
-Depois rode:
+Depois publique a pasta gerada pelo build:
 
 ```bash
 npm run build
 ```
 
-Observacoes:
+## PWA
 
-- o projeto nao usa `_redirects`, para evitar o erro de loop no Cloudflare
-- o service worker guarda apenas o casco do app e assets estaticos
-- dados do Supabase nao ficam em cache offline
+O app inclui manifest, icones e service worker para instalacao no celular.
 
-## Checklist simples de entrega
+Depois do deploy, teste:
 
-1. Rodar `supabase-schema.sql` no Supabase
-2. Rodar `npm run test`
-3. Rodar `npm run build`
-4. Fazer deploy no Cloudflare
-5. Testar login, lancamentos, pago/pendente, recorrencia, troca de mes e recuperacao de senha
+- abrir o app no navegador;
+- instalar no celular;
+- fechar e abrir novamente;
+- confirmar que login e dados carregam normalmente;
+- confirmar que a logo e o nome do app aparecem corretamente.
+
+## Checklist de entrega
+
+1. Aplicar o SQL do banco.
+2. Configurar variaveis de ambiente.
+3. Rodar testes.
+4. Rodar build.
+5. Publicar.
+6. Testar login e recuperacao de senha.
+7. Testar lancamentos, pago/pendente e recorrencias.
+8. Testar limites, relatorios e troca de mes.
+9. Testar instalacao PWA no celular.
