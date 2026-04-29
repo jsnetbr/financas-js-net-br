@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   ChevronLeft,
@@ -15,28 +15,47 @@ import {
   ReceiptText,
   RefreshCw,
   Repeat2,
-  CheckCircle2,
   Gauge,
   Settings,
   Trash2,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { LoadingLogo } from "./LoadingLogo";
 import {
   calculateSummary,
   Category,
   CategoryLimit,
   dateKeyFromParts,
-  defaultCategories,
   EntryType,
   formatMoney,
-  getMonthRange,
+  hasDuplicateCategoryName,
   monthKey,
   RecurringTransaction,
+  todayKey,
   toCents,
   Transaction,
 } from "../lib/finance";
+import {
+  createCategory,
+  createRecurringTransaction,
+  createTransaction,
+  DashboardProfile,
+  deleteCategoryById,
+  deleteCategoryLimitById,
+  deleteRecurringTransactionById,
+  deleteTransactionById,
+  loadDashboardData,
+  updateCategoryById,
+  updateProfileDisplayName,
+  updateRecurringActiveState,
+  updateRecurringTransactionById,
+  updateTransactionById,
+  updateTransactionPaidState,
+  upsertCategoryLimit,
+} from "../lib/dashboard-api";
 import { supabase } from "../lib/supabase";
+import { DashboardModal } from "./dashboard/DashboardModal";
+import { SummaryCard } from "./dashboard/SummaryCard";
+import { TransactionCards } from "./dashboard/TransactionCards";
 
 type TransactionForm = {
   type: EntryType;
@@ -69,12 +88,6 @@ type DashboardTab =
   | "relatorios"
   | "configuracoes";
 
-type Profile = {
-  id: string;
-  email: string;
-  display_name: string | null;
-};
-
 type NoticeTone = "info" | "success" | "error";
 
 type PendingAction =
@@ -97,14 +110,6 @@ type ConfirmDialog = {
   onConfirm: () => Promise<void>;
 };
 
-type MaybeDisplayNameError = {
-  code?: string;
-  message?: string;
-  details?: string;
-  hint?: string;
-};
-
-const today = new Date().toISOString().slice(0, 10);
 const palette = ["#2f9e44", "#1971c2", "#f08c00", "#7048e8", "#d6336c", "#0ca678"];
 
 function centsToInput(cents: number) {
@@ -147,10 +152,28 @@ function inferNoticeTone(text: string): NoticeTone {
   return "success";
 }
 
-function isMissingDisplayNameColumn(error: MaybeDisplayNameError | null) {
-  if (!error) return false;
-  const details = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`.toLowerCase();
-  return details.includes("display_name") || error.code === "PGRST204" || error.code === "42703";
+function sortTransactions(items: Transaction[]) {
+  return [...items].sort((a, b) => b.entry_date.localeCompare(a.entry_date));
+}
+
+function sortCategories(items: Category[]) {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
+function sortRecurring(items: RecurringTransaction[]) {
+  return [...items].sort((a, b) => a.day_of_month - b.day_of_month);
+}
+
+function replaceItemById<T extends { id: string }>(items: T[], nextItem: T) {
+  return items.map((item) => (item.id === nextItem.id ? nextItem : item));
+}
+
+function isInSelectedMonth(entryDate: string, selectedMonth: string) {
+  return entryDate.startsWith(`${selectedMonth}-`);
+}
+
+function isDuplicateCategoryError(error: { code?: string } | null) {
+  return error?.code === "23505";
 }
 
 export function FinanceDashboard() {
@@ -160,7 +183,7 @@ export function FinanceDashboard() {
   const [categoryLimits, setCategoryLimits] = useState<CategoryLimit[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [recurring, setRecurring] = useState<RecurringTransaction[]>([]);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<DashboardProfile | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("resumo");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCategoryType, setActiveCategoryType] = useState<EntryType>("saida");
@@ -174,7 +197,7 @@ export function FinanceDashboard() {
     type: "saida",
     description: "",
     amount: "",
-    entry_date: today,
+    entry_date: todayKey(),
     category_id: "",
     notes: "",
   });
@@ -263,72 +286,28 @@ export function FinanceDashboard() {
     if (showRefreshMessage) setPendingAction("refresh");
 
     try {
-      await ensureBaseData();
-      const { start, end } = getMonthRange(selectedMonth);
+      const results = await loadDashboardData(
+        supabase,
+        user.id,
+        user.email ?? "",
+        selectedMonth,
+        supportsDisplayName,
+      );
 
-      const [categoryResult, limitResult, transactionResult, recurringResult] = await Promise.all([
-        supabase.from("categories").select("*").order("name"),
-        supabase.from("category_limits").select("id,category_id,amount_cents"),
-        supabase
-          .from("transactions")
-          .select("*")
-          .gte("entry_date", start)
-          .lt("entry_date", end)
-          .order("entry_date", { ascending: false }),
-        supabase.from("recurring_transactions").select("*").order("day_of_month"),
-      ]);
-
-      let profileResult;
-      if (supportsDisplayName) {
-        profileResult = await supabase.from("profiles").select("id,email,display_name").eq("id", user.id).maybeSingle();
-
-        if (isMissingDisplayNameColumn(profileResult.error as MaybeDisplayNameError | null)) {
-          setSupportsDisplayName(false);
-          profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
-        }
-      } else {
-        profileResult = await supabase.from("profiles").select("id,email").eq("id", user.id).maybeSingle();
-      }
-
-      if (profileResult.error || categoryResult.error || limitResult.error || transactionResult.error || recurringResult.error) {
-        setMessage("Nao foi possivel carregar os dados agora.", "error");
-      } else {
-        const profileRow = profileResult.data as { id: string; email: string; display_name?: string | null } | null;
-        const nextProfile = profileRow
-          ? { id: profileRow.id, email: profileRow.email, display_name: profileRow.display_name ?? null }
-          : null;
-        setProfile(nextProfile);
-        setDisplayName(nextProfile?.display_name ?? "");
-        setNewEmail(user.email ?? "");
-        setCategories(categoryResult.data ?? []);
-        setCategoryLimits(limitResult.data ?? []);
-        setTransactions(transactionResult.data ?? []);
-        setRecurring(recurringResult.data ?? []);
-        if (showRefreshMessage) setMessage("Dados atualizados.");
-      }
+      setSupportsDisplayName(results.supportsDisplayName);
+      setProfile(results.profile);
+      setDisplayName(results.profile?.display_name ?? "");
+      setNewEmail(results.profile?.email ?? user.email ?? "");
+      setCategories(sortCategories(results.categories));
+      setCategoryLimits(results.categoryLimits);
+      setTransactions(sortTransactions(results.transactions));
+      setRecurring(sortRecurring(results.recurring));
+      if (showRefreshMessage) setMessage("Dados atualizados.");
     } catch {
       setMessage("Nao foi possivel carregar os dados agora.", "error");
     } finally {
       setLoading(false);
       if (showRefreshMessage) setPendingAction(null);
-    }
-  }
-
-  async function ensureBaseData() {
-    if (!supabase || !user) return;
-    await supabase.from("profiles").upsert({ id: user.id, email: user.email ?? "" });
-
-    const { count } = await supabase
-      .from("categories")
-      .select("id", { count: "exact", head: true });
-
-    if (count === 0) {
-      await supabase.from("categories").insert(
-        defaultCategories.map((item) => ({
-          ...item,
-          user_id: user.id,
-        })),
-      );
     }
   }
 
@@ -344,7 +323,7 @@ export function FinanceDashboard() {
 
     setPendingAction("transaction");
     try {
-      const { error } = await supabase.from("transactions").insert({
+      const { data, error } = await createTransaction(supabase, {
         user_id: user.id,
         type: transactionForm.type,
         description: transactionForm.description.trim(),
@@ -360,6 +339,9 @@ export function FinanceDashboard() {
         return;
       }
 
+      if (data && isInSelectedMonth(data.entry_date, selectedMonth)) {
+        setTransactions((current) => sortTransactions([data, ...current]));
+      }
       setMessage("Lancamento salvo.");
       setTransactionForm((current) => ({
         ...current,
@@ -367,7 +349,6 @@ export function FinanceDashboard() {
         amount: "",
         notes: "",
       }));
-      await loadData();
     } catch {
       setMessage("Nao foi possivel salvar o lancamento.");
     } finally {
@@ -387,26 +368,30 @@ export function FinanceDashboard() {
 
     setPendingAction("transaction");
     try {
-      const { error } = await supabase
-        .from("transactions")
-        .update({
-          type: editingTransaction.type,
-          description: editingTransaction.description.trim(),
-          amount_cents: amount,
-          entry_date: editingTransaction.entry_date,
-          category_id: editingTransaction.category_id || null,
-          notes: editingTransaction.notes.trim() || null,
-        })
-        .eq("id", editingTransaction.id);
+      const { data, error } = await updateTransactionById(supabase, editingTransaction.id, {
+        type: editingTransaction.type,
+        description: editingTransaction.description.trim(),
+        amount_cents: amount,
+        entry_date: editingTransaction.entry_date,
+        category_id: editingTransaction.category_id || null,
+        notes: editingTransaction.notes.trim() || null,
+      });
 
       if (error) {
         setMessage("Nao foi possivel atualizar o lancamento.");
         return;
       }
 
+      if (data) {
+        setTransactions((current) => {
+          const withoutCurrent = current.filter((item) => item.id !== data.id);
+          return isInSelectedMonth(data.entry_date, selectedMonth)
+            ? sortTransactions([data, ...withoutCurrent])
+            : withoutCurrent;
+        });
+      }
       setEditingTransaction(null);
       setMessage("Lancamento atualizado.");
-      await loadData();
     } catch {
       setMessage("Nao foi possivel atualizar o lancamento.");
     } finally {
@@ -421,10 +406,14 @@ export function FinanceDashboard() {
       setMessage("Informe o nome da categoria.");
       return;
     }
+    if (hasDuplicateCategoryName(categories, categoryName, activeCategoryType)) {
+      setMessage("Ja existe uma categoria com esse nome neste grupo.");
+      return;
+    }
 
     setPendingAction("category");
     try {
-      const { error } = await supabase.from("categories").insert({
+      const { data, error } = await createCategory(supabase, {
         user_id: user.id,
         name: categoryName.trim(),
         type: activeCategoryType,
@@ -432,13 +421,19 @@ export function FinanceDashboard() {
       });
 
       if (error) {
-        setMessage("Nao foi possivel criar a categoria.");
+        setMessage(
+          isDuplicateCategoryError(error)
+            ? "Ja existe uma categoria com esse nome neste grupo."
+            : "Nao foi possivel criar a categoria.",
+        );
         return;
       }
 
+      if (data) {
+        setCategories((current) => sortCategories([...current, data]));
+      }
       setMessage("Categoria criada.");
       setCategoryName("");
-      await loadData();
     } catch {
       setMessage("Nao foi possivel criar a categoria.");
     } finally {
@@ -453,25 +448,39 @@ export function FinanceDashboard() {
       setMessage("Informe o nome da categoria.");
       return;
     }
+    if (
+      hasDuplicateCategoryName(
+        categories,
+        editingCategory.name,
+        editingCategory.type,
+        editingCategory.id,
+      )
+    ) {
+      setMessage("Ja existe uma categoria com esse nome neste grupo.");
+      return;
+    }
 
     setPendingAction("category");
     try {
-      const { error } = await supabase
-        .from("categories")
-        .update({
-          name: editingCategory.name.trim(),
-          color: editingCategory.color,
-        })
-        .eq("id", editingCategory.id);
+      const { data, error } = await updateCategoryById(supabase, editingCategory.id, {
+        name: editingCategory.name.trim(),
+        color: editingCategory.color,
+      });
 
       if (error) {
-        setMessage("Nao foi possivel atualizar a categoria.");
+        setMessage(
+          isDuplicateCategoryError(error)
+            ? "Ja existe uma categoria com esse nome neste grupo."
+            : "Nao foi possivel atualizar a categoria.",
+        );
         return;
       }
 
+      if (data) {
+        setCategories((current) => sortCategories(replaceItemById(current, data)));
+      }
       setEditingCategory(null);
       setMessage("Categoria atualizada.");
-      await loadData();
     } catch {
       setMessage("Nao foi possivel atualizar a categoria.");
     } finally {
@@ -491,24 +500,30 @@ export function FinanceDashboard() {
 
     setPendingAction("limit");
     try {
-      const { error } = await supabase.from("category_limits").upsert(
-        {
-          user_id: user.id,
-          category_id: limitForm.category_id,
-          amount_cents: amount,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,category_id" },
-      );
+      const { data, error } = await upsertCategoryLimit(supabase, {
+        user_id: user.id,
+        category_id: limitForm.category_id,
+        amount_cents: amount,
+        updated_at: new Date().toISOString(),
+      });
 
       if (error) {
         setMessage("Nao foi possivel salvar o limite.");
         return;
       }
 
+      if (data) {
+        setCategoryLimits((current) => {
+          const existingIndex = current.findIndex((item) => item.id === data.id || item.category_id === data.category_id);
+          if (existingIndex === -1) {
+            return [...current, data];
+          }
+
+          return current.map((item, index) => (index === existingIndex ? data : item));
+        });
+      }
       setMessage("Limite salvo.");
       setLimitForm({ category_id: "", amount: "" });
-      await loadData();
     } catch {
       setMessage("Nao foi possivel salvar o limite.");
     } finally {
@@ -519,14 +534,25 @@ export function FinanceDashboard() {
   async function deleteCategoryLimit(id: string) {
     if (!supabase) return;
     const client = supabase;
+    const limitToDelete = categoryLimits.find((item) => item.id === id);
     setConfirmDialog({
       title: "Remover limite?",
       message: "A categoria continua existindo, apenas o limite mensal sera removido.",
       confirmLabel: "Remover",
       onConfirm: async () => {
-        const { error } = await client.from("category_limits").delete().eq("id", id);
-        setMessage(error ? "Nao foi possivel remover o limite." : "Limite removido.");
-        await loadData();
+        const { error } = await deleteCategoryLimitById(client, id);
+        if (error) {
+          setMessage("Nao foi possivel remover o limite.");
+          return;
+        }
+
+        setCategoryLimits((current) => current.filter((item) => item.id !== id));
+        setLimitForm((current) =>
+          current.category_id && current.category_id === limitToDelete?.category_id
+            ? { category_id: "", amount: "" }
+            : current,
+        );
+        setMessage("Limite removido.");
       },
     });
   }
@@ -544,7 +570,7 @@ export function FinanceDashboard() {
 
     setPendingAction("recurring");
     try {
-      const { error } = await supabase.from("recurring_transactions").insert({
+      const { data, error } = await createRecurringTransaction(supabase, {
         user_id: user.id,
         type: recurringForm.type,
         description: recurringForm.description.trim(),
@@ -559,9 +585,11 @@ export function FinanceDashboard() {
         return;
       }
 
+      if (data) {
+        setRecurring((current) => sortRecurring([...current, data]));
+      }
       setMessage("Recorrencia salva.");
       setRecurringForm((current) => ({ ...current, description: "", amount: "" }));
-      await loadData();
     } catch {
       setMessage("Nao foi possivel salvar a recorrencia.");
     } finally {
@@ -582,26 +610,25 @@ export function FinanceDashboard() {
 
     setPendingAction("recurring");
     try {
-      const { error } = await supabase
-        .from("recurring_transactions")
-        .update({
-          type: editingRecurring.type,
-          description: editingRecurring.description.trim(),
-          amount_cents: amount,
-          category_id: editingRecurring.category_id || null,
-          day_of_month: day,
-          is_active: editingRecurring.is_active,
-        })
-        .eq("id", editingRecurring.id);
+      const { data, error } = await updateRecurringTransactionById(supabase, editingRecurring.id, {
+        type: editingRecurring.type,
+        description: editingRecurring.description.trim(),
+        amount_cents: amount,
+        category_id: editingRecurring.category_id || null,
+        day_of_month: day,
+        is_active: editingRecurring.is_active,
+      });
 
       if (error) {
         setMessage("Nao foi possivel atualizar a recorrencia.");
         return;
       }
 
+      if (data) {
+        setRecurring((current) => sortRecurring(replaceItemById(current, data)));
+      }
       setEditingRecurring(null);
       setMessage("Recorrencia atualizada.");
-      await loadData();
     } catch {
       setMessage("Nao foi possivel atualizar a recorrencia.");
     } finally {
@@ -617,9 +644,14 @@ export function FinanceDashboard() {
       message: "Esta acao remove o lancamento deste mes.",
       confirmLabel: "Apagar",
       onConfirm: async () => {
-        const { error } = await client.from("transactions").delete().eq("id", id);
-        setMessage(error ? "Nao foi possivel apagar o lancamento." : "Lancamento apagado.");
-        await loadData();
+        const { error } = await deleteTransactionById(client, id);
+        if (error) {
+          setMessage("Nao foi possivel apagar o lancamento.");
+          return;
+        }
+
+        setTransactions((current) => current.filter((item) => item.id !== id));
+        setMessage("Lancamento apagado.");
       },
     });
   }
@@ -632,9 +664,28 @@ export function FinanceDashboard() {
       message: "Lancamentos antigos continuam salvos e ficam sem categoria.",
       confirmLabel: "Apagar",
       onConfirm: async () => {
-        const { error } = await client.from("categories").delete().eq("id", id);
-        setMessage(error ? "Nao foi possivel apagar a categoria." : "Categoria apagada.");
-        await loadData();
+        const { error } = await deleteCategoryById(client, id);
+        if (error) {
+          setMessage("Nao foi possivel apagar a categoria.");
+          return;
+        }
+
+        setCategories((current) => current.filter((item) => item.id !== id));
+        setCategoryLimits((current) => current.filter((item) => item.category_id !== id));
+        setTransactions((current) =>
+          current.map((item) => (item.category_id === id ? { ...item, category_id: null } : item)),
+        );
+        setRecurring((current) =>
+          current.map((item) => (item.category_id === id ? { ...item, category_id: null } : item)),
+        );
+        setTransactionForm((current) =>
+          current.category_id === id ? { ...current, category_id: "" } : current,
+        );
+        setRecurringForm((current) =>
+          current.category_id === id ? { ...current, category_id: "" } : current,
+        );
+        setLimitForm((current) => (current.category_id === id ? { category_id: "", amount: "" } : current));
+        setMessage("Categoria apagada.");
       },
     });
   }
@@ -647,9 +698,14 @@ export function FinanceDashboard() {
       message: "Lancamentos ja gerados continuam salvos.",
       confirmLabel: "Apagar",
       onConfirm: async () => {
-        const { error } = await client.from("recurring_transactions").delete().eq("id", id);
-        setMessage(error ? "Nao foi possivel apagar a recorrencia." : "Recorrencia apagada.");
-        await loadData();
+        const { error } = await deleteRecurringTransactionById(client, id);
+        if (error) {
+          setMessage("Nao foi possivel apagar a recorrencia.");
+          return;
+        }
+
+        setRecurring((current) => current.filter((item) => item.id !== id));
+        setMessage("Recorrencia apagada.");
       },
     });
   }
@@ -671,13 +727,16 @@ export function FinanceDashboard() {
     if (!supabase || isBusy) return;
     setPendingAction("recurring");
     try {
-      const { error } = await supabase
-        .from("recurring_transactions")
-        .update({ is_active: !item.is_active })
-        .eq("id", item.id);
+      const { data, error } = await updateRecurringActiveState(supabase, item.id, !item.is_active);
+      if (error) {
+        setMessage("Nao foi possivel alterar a recorrencia.");
+        return;
+      }
 
-      setMessage(error ? "Nao foi possivel alterar a recorrencia." : "Recorrencia atualizada.");
-      await loadData();
+      if (data) {
+        setRecurring((current) => sortRecurring(replaceItemById(current, data)));
+      }
+      setMessage("Recorrencia atualizada.");
     } catch {
       setMessage("Nao foi possivel alterar a recorrencia.");
     } finally {
@@ -729,15 +788,21 @@ export function FinanceDashboard() {
 
     setPendingAction("recurring");
     try {
-      const { error } = await supabase.from("transactions").insert(payload);
+      const { data, error } = await createTransaction(supabase, payload);
 
       if (error) {
-        setMessage(error.code === "23505" ? "Esta recorrencia ja foi gerada neste mes." : "Nao foi possivel gerar o lancamento.");
+        setMessage(
+          error.code === "23505"
+            ? "Esta recorrencia ja foi gerada neste mes."
+            : "Nao foi possivel gerar o lancamento.",
+        );
         return;
       }
 
+      if (data) {
+        setTransactions((current) => sortTransactions([data, ...current]));
+      }
       setMessage("Lancamento gerado.");
-      await loadData();
     } catch {
       setMessage("Nao foi possivel gerar o lancamento.");
     } finally {
@@ -749,13 +814,16 @@ export function FinanceDashboard() {
     if (!supabase || item.type !== "saida" || isBusy) return;
     setPendingAction("paid");
     try {
-      const { error } = await supabase
-        .from("transactions")
-        .update({ is_paid: !item.is_paid })
-        .eq("id", item.id);
+      const { data, error } = await updateTransactionPaidState(supabase, item.id, !item.is_paid);
+      if (error) {
+        setMessage("Nao foi possivel alterar o status de pagamento.");
+        return;
+      }
 
-      setMessage(error ? "Nao foi possivel alterar o status de pagamento." : "Status atualizado.");
-      await loadData();
+      if (data) {
+        setTransactions((current) => sortTransactions(replaceItemById(current, data)));
+      }
+      setMessage("Status atualizado.");
     } catch {
       setMessage("Nao foi possivel alterar o status de pagamento.");
     } finally {
@@ -774,10 +842,12 @@ export function FinanceDashboard() {
     const nextName = displayName.trim();
     setPendingAction("profile");
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({ display_name: nextName || null, email: user.email ?? "" })
-        .eq("id", user.id);
+      const { error } = await updateProfileDisplayName(
+        supabase,
+        user.id,
+        user.email ?? "",
+        nextName || null,
+      );
 
       if (error) {
         setMessage("Nao foi possivel salvar o nome exibido.");
@@ -934,23 +1004,31 @@ export function FinanceDashboard() {
 
         <nav className="sidebar-nav">{navigation}</nav>
 
-        <button
-          className="sidebar-toggle"
-          onClick={() => setSidebarCollapsed((current) => !current)}
-          title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
-          aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
-          aria-pressed={sidebarCollapsed}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-          <span>{sidebarCollapsed ? "Expandir" : "Recolher"}</span>
-        </button>
+        <div className="sidebar-footer">
+          <button className="sidebar-action" onClick={signOut} title="Sair" aria-label="Sair">
+            <span className="sidebar-action-mark" aria-hidden="true">
+              <LogOut size={16} />
+            </span>
+            <span>Sair</span>
+          </button>
+          <button
+            className="sidebar-toggle"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            title={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            aria-label={sidebarCollapsed ? "Expandir menu" : "Recolher menu"}
+            aria-pressed={sidebarCollapsed}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            <span>{sidebarCollapsed ? "Expandir" : "Recolher"}</span>
+          </button>
+        </div>
       </aside>
 
       <section className="app-shell">
       <header className="topbar">
         <div>
-          <h1>Financas</h1>
           <p>{profileLabel}</p>
+          <h1>Financas</h1>
         </div>
         <div className="topbar-actions">
           <div className="month-nav" role="group" aria-label="Navegacao de mes">
@@ -968,9 +1046,6 @@ export function FinanceDashboard() {
               <ChevronRight size={18} />
             </button>
           </div>
-          <button className="icon-button" onClick={signOut} title="Sair">
-            <LogOut size={18} />
-          </button>
         </div>
       </header>
 
@@ -990,10 +1065,10 @@ export function FinanceDashboard() {
 
           <section className="panel">
             <div className="panel-header">
-              <div>
-                <p className="eyebrow">Mes filtrado</p>
-                <h2>Saidas do mes</h2>
-              </div>
+            <div>
+              <p className="eyebrow">Mes filtrado</p>
+              <h2>Saidas do mes</h2>
+            </div>
               <button className="ghost-button" onClick={() => loadData(true)} disabled={isBusy}>
                 <RefreshCw size={16} />
                 {pendingAction === "refresh" ? "Atualizando..." : "Atualizar"}
@@ -1601,7 +1676,7 @@ export function FinanceDashboard() {
       )}
 
       {editingTransaction && (
-        <Modal title="Editar lancamento" onClose={() => setEditingTransaction(null)}>
+        <DashboardModal title="Editar lancamento" onClose={() => setEditingTransaction(null)}>
           <form className="modal-form" onSubmit={updateTransaction}>
             <select
               value={editingTransaction.type}
@@ -1672,11 +1747,11 @@ export function FinanceDashboard() {
               {pendingAction === "transaction" ? "Salvando..." : "Salvar alteracoes"}
             </button>
           </form>
-        </Modal>
+        </DashboardModal>
       )}
 
       {editingCategory && (
-        <Modal title="Editar categoria" onClose={() => setEditingCategory(null)}>
+        <DashboardModal title="Editar categoria" onClose={() => setEditingCategory(null)}>
           <form className="modal-form" onSubmit={updateCategory}>
             <input
               value={editingCategory.name}
@@ -1695,11 +1770,11 @@ export function FinanceDashboard() {
               {pendingAction === "category" ? "Salvando..." : "Salvar categoria"}
             </button>
           </form>
-        </Modal>
+        </DashboardModal>
       )}
 
       {editingRecurring && (
-        <Modal title="Editar recorrencia" onClose={() => setEditingRecurring(null)}>
+        <DashboardModal title="Editar recorrencia" onClose={() => setEditingRecurring(null)}>
           <form className="modal-form" onSubmit={updateRecurring}>
             <select
               value={editingRecurring.type}
@@ -1774,10 +1849,10 @@ export function FinanceDashboard() {
               {pendingAction === "recurring" ? "Salvando..." : "Salvar recorrencia"}
             </button>
           </form>
-        </Modal>
+        </DashboardModal>
       )}
       {confirmDialog && (
-        <Modal title={confirmDialog.title} onClose={() => setConfirmDialog(null)}>
+        <DashboardModal title={confirmDialog.title} onClose={() => setConfirmDialog(null)}>
           <p className="confirm-message">{confirmDialog.message}</p>
           <div className="modal-actions">
             <button className="ghost-button" onClick={() => setConfirmDialog(null)} disabled={isBusy}>
@@ -1787,119 +1862,9 @@ export function FinanceDashboard() {
               {pendingAction === "confirm" ? "Aguarde..." : confirmDialog.confirmLabel}
             </button>
           </div>
-        </Modal>
+        </DashboardModal>
       )}
       </section>
     </main>
-  );
-}
-
-function SummaryCard({ title, value, tone }: { title: string; value: string; tone: string }) {
-  return (
-    <article className={`summary-card ${tone}`}>
-      <span>{title}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
-function TransactionCards({
-  transactions,
-  loading,
-  categoryNameFor,
-  deleteTransaction,
-  editTransaction,
-  togglePaid,
-  emptyMessage = "Nenhum lancamento neste mes.",
-  isBusy,
-}: {
-  transactions: Transaction[];
-  loading: boolean;
-  categoryNameFor: (id: string | null) => string;
-  deleteTransaction: (id: string) => Promise<void>;
-  editTransaction: (item: Transaction) => void;
-  togglePaid: (item: Transaction) => Promise<void>;
-  emptyMessage?: string;
-  isBusy: boolean;
-}) {
-  if (loading) {
-    return <LoadingLogo compact label="Carregando dados..." />;
-  }
-
-  if (transactions.length === 0) {
-    return <p className="empty-state">{emptyMessage}</p>;
-  }
-
-  return (
-    <div className="card-grid">
-      {transactions.map((item) => (
-        <article className={`data-card ${item.type}`} key={item.id}>
-          <div className="card-row">
-            <span className="type-pill">{item.type === "entrada" ? "Entrada" : "Saida"}</span>
-            <strong className={item.type === "entrada" ? "money-income" : "money-expense"}>
-              {formatMoney(item.amount_cents)}
-            </strong>
-          </div>
-          <h3>{item.description}</h3>
-          <p>{categoryNameFor(item.category_id)}</p>
-          {item.type === "saida" && (
-            <span className={item.is_paid ? "status-pill success" : "status-pill pending"}>
-              {item.is_paid ? "Pago" : "Pendente"}
-            </span>
-          )}
-          <div className="card-row footer">
-            <span>{new Date(`${item.entry_date}T00:00:00`).toLocaleDateString("pt-BR")}</span>
-            <div className="card-actions compact">
-              {item.type === "saida" && (
-                <button
-                  className={item.is_paid ? "ghost-button paid-action" : "ghost-button"}
-                  onClick={() => togglePaid(item)}
-                  title={item.is_paid ? "Desmarcar pagamento" : "Marcar como pago"}
-                  disabled={isBusy}
-                >
-                  <CheckCircle2 size={16} />
-                  {item.is_paid ? "Desmarcar" : "Marcar pago"}
-                </button>
-              )}
-              <button className="icon-button" onClick={() => editTransaction(item)} title="Editar" disabled={isBusy}>
-                <Pencil size={16} />
-              </button>
-              <button
-                className="icon-button"
-                onClick={() => deleteTransaction(item.id)}
-                title="Apagar"
-                disabled={isBusy}
-              >
-                <Trash2 size={16} />
-              </button>
-            </div>
-          </div>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function Modal({
-  title,
-  children,
-  onClose,
-}: {
-  title: string;
-  children: ReactNode;
-  onClose: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title}>
-      <section className="modal-card">
-        <div className="panel-header">
-          <h2>{title}</h2>
-          <button className="ghost-button" onClick={onClose}>
-            Fechar
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
   );
 }

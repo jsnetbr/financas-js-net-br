@@ -184,10 +184,19 @@ button:disabled:hover {
   margin-top: 18px;
 }
 
-.auth-panel p,
-.topbar p {
+.auth-panel p {
   color: var(--muted);
   margin: 8px 0 0;
+}
+
+.topbar > div {
+  display: grid;
+  gap: 6px;
+}
+
+.topbar p {
+  color: var(--muted);
+  margin: 0;
 }
 
 .segmented {
@@ -538,25 +547,58 @@ input[type="color"] {
   justify-content: flex-start;
 }
 
+.sidebar-footer {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.sidebar-action {
+  align-items: center;
+  background: #0d1520;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted-strong);
+  display: flex;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 12px;
+}
+
+.sidebar-action-mark {
+  align-items: center;
+  background: rgba(106, 168, 255, 0.12);
+  border: 1px solid rgba(106, 168, 255, 0.22);
+  border-radius: 6px;
+  color: var(--blue);
+  display: inline-flex;
+  height: 24px;
+  justify-content: center;
+  width: 24px;
+}
+
 .sidebar-collapsed .sidebar {
   padding-inline: 12px;
 }
 
 .sidebar-collapsed .sidebar-brand,
 .sidebar-collapsed .sidebar-nav button,
-.sidebar-collapsed .sidebar-toggle {
+.sidebar-collapsed .sidebar-toggle,
+.sidebar-collapsed .sidebar-action {
   grid-template-columns: 1fr;
   justify-content: center;
 }
 
 .sidebar-collapsed .sidebar-copy,
 .sidebar-collapsed .sidebar-nav span,
-.sidebar-collapsed .sidebar-toggle span {
+.sidebar-collapsed .sidebar-toggle span,
+.sidebar-collapsed .sidebar-action span:last-child {
   display: none;
 }
 
 .sidebar-collapsed .sidebar-nav button,
-.sidebar-collapsed .sidebar-toggle {
+.sidebar-collapsed .sidebar-toggle,
+.sidebar-collapsed .sidebar-action {
   padding-inline: 10px;
 }
 
@@ -583,6 +625,7 @@ input[type="color"] {
   align-items: center;
   display: flex;
   gap: 10px;
+  flex-wrap: nowrap;
 }
 
 .month-nav {
@@ -593,6 +636,13 @@ input[type="color"] {
 
 .month-nav .icon-button {
   min-width: 42px;
+}
+
+.topbar-actions > .icon-button {
+  flex: 0 0 42px;
+  min-width: 42px;
+  padding: 0;
+  width: 42px;
 }
 
 .month-picker {

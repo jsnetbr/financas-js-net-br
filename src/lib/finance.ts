@@ -65,8 +65,32 @@ export function dateKeyFromParts(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+export function todayKey(date = new Date()) {
+  return dateKeyFromParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
+}
+
 export function monthKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function normalizeCategoryName(value: string) {
+  return value.trim().toLocaleLowerCase("pt-BR");
+}
+
+export function hasDuplicateCategoryName(
+  categories: Category[],
+  name: string,
+  type: EntryType,
+  ignoreId?: string,
+) {
+  const normalized = normalizeCategoryName(name);
+  if (!normalized) return false;
+
+  return categories.some((item) => {
+    if (item.type !== type) return false;
+    if (ignoreId && item.id === ignoreId) return false;
+    return normalizeCategoryName(item.name) === normalized;
+  });
 }
 
 export function getMonthRange(key: string) {

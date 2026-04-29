@@ -1,4 +1,4 @@
-const CACHE_NAME = "financas-app-shell-v4";
+const CACHE_NAME = "financas-app-shell-v5";
 const APP_SHELL = [
   "/",
   "/manifest.webmanifest",
