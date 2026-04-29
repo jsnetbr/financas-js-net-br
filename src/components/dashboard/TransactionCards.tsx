@@ -54,19 +54,28 @@ export function TransactionCards({
                   className={item.is_paid ? "ghost-button paid-action" : "ghost-button"}
                   onClick={() => togglePaid(item)}
                   title={item.is_paid ? "Desmarcar pagamento" : "Marcar como pago"}
+                  aria-label={item.is_paid ? "Desmarcar lançamento como pago" : "Marcar lançamento como pago"}
+                  aria-pressed={item.is_paid}
                   disabled={isBusy}
                 >
                   <CheckCircle2 size={16} />
                   {item.is_paid ? "Desmarcar" : "Marcar pago"}
                 </button>
               )}
-              <button className="icon-button" onClick={() => editTransaction(item)} title="Editar" disabled={isBusy}>
+              <button
+                className="icon-button"
+                onClick={() => editTransaction(item)}
+                title="Editar"
+                aria-label="Editar lançamento"
+                disabled={isBusy}
+              >
                 <Pencil size={16} />
               </button>
               <button
                 className="icon-button"
                 onClick={() => deleteTransaction(item.id)}
                 title="Apagar"
+                aria-label="Apagar lançamento"
                 disabled={isBusy}
               >
                 <Trash2 size={16} />
