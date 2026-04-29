@@ -984,6 +984,63 @@ input[type="color"] {
   margin: 0;
 }
 
+.card-grid--expenses {
+  display: grid;
+  gap: 8px;
+  overflow-x: hidden;
+}
+
+.expenses-row {
+  align-items: center;
+  animation: card-in 0.32s var(--ease-soft) both;
+  background: linear-gradient(180deg, rgba(21, 33, 50, 0.98), rgba(16, 26, 39, 0.98));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  column-gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(180px, 2fr) minmax(120px, 1.2fr) 110px 120px 110px minmax(210px, 1.7fr);
+  min-height: 56px;
+  padding: 12px;
+}
+
+.expenses-row > * {
+  min-width: 0;
+}
+
+.expenses-row > span,
+.expenses-row > strong {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expenses-row--header {
+  background: rgba(47, 115, 214, 0.12);
+  border-color: rgba(47, 115, 214, 0.42);
+  min-height: 46px;
+  padding-block: 10px;
+}
+
+.expenses-row--header span {
+  color: var(--muted-strong);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.card-grid--expenses .card-actions .ghost-button,
+.card-grid--expenses .card-actions .icon-button {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+
+.card-grid--expenses .card-actions .icon-button {
+  min-width: 34px;
+  padding: 6px;
+}
+
 .card-row {
   align-items: center;
   display: flex;
@@ -1741,6 +1798,17 @@ input[type="color"] {
 
   .ranking-row b {
     grid-column: 2;
+  }
+
+  .card-grid--expenses {
+    display: grid;
+    gap: 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .expenses-row {
+    min-width: 920px;
   }
 }
 
